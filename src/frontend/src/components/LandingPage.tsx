@@ -250,10 +250,9 @@ export function LandingPage() {
               MUTED,
             )}
           >
-            a social graph for legal researchers
+            hyvmind.xyz
           </span>
-
-          <div className="flex items-center gap-4">
+          <div className="ml-auto flex items-center gap-4">
             <span
               className={cn(
                 "flex items-center gap-1.5 text-[10px] tracking-[0.08em]",
@@ -269,22 +268,21 @@ export function LandingPage() {
 
         <main className="min-h-0 flex-1 overflow-y-auto">
           {/* Hero */}
-          <section
-            className={cn("grid border-b lg:grid-cols-[1.02fr_1fr]", HAIRLINE)}
-          >
+          <section className={cn("grid border-b lg:grid-cols-2", HAIRLINE)}>
             <div className="px-4 py-14 sm:px-6 sm:py-20">
-              <h1 className="max-w-[18ch] text-[clamp(1.9rem,5vw,3.5rem)] font-medium leading-[1.04] tracking-[-0.03em]">
-                Own your interpretations.
+              <h1 className="max-w-[18ch] text-[clamp(1.7rem,4.3vw,3rem)] font-medium leading-[1.04] tracking-[-0.03em]">
+                A Social Graph for Legal Researchers.
               </h1>
               <p
                 className={cn(
-                  "mt-6 max-w-[54ch] text-[14px] leading-[1.7]",
+                  "mt-6 max-w-[64ch] text-[14px] leading-[1.7]",
                   MUTED,
                 )}
               >
-                Each post is a contribution to an infinite web.
+                Each post becomes a contribution to an expanding artifact.
                 <br />
-                It's recorded, organised and credited to your account.
+                <br />
+                It is recorded, organised and credited to your account.
               </p>
             </div>
 
