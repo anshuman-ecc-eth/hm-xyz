@@ -123,7 +123,7 @@ export function FollowList({ type }: FollowListProps) {
           {Array.from({ length: 5 }).map((_, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: stable list
             <div key={i} className="flex items-center gap-3 px-4 py-3">
-              <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+              <Skeleton className="h-10 w-10 shrink-0 rounded-none" />
               <div className="flex-1 space-y-1.5">
                 <Skeleton className="h-4 w-1/3" />
                 <Skeleton className="h-3 w-1/4" />

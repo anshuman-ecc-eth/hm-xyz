@@ -266,7 +266,7 @@ export function ProfilePage() {
   if (isLoadingProfile) {
     return (
       <div>
-        <div className="sticky top-0 z-10 flex items-center gap-3 border-b bg-background/80 px-4 py-2 backdrop-blur-sm">
+        <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background px-4 py-2.5 font-mono">
           <BackButton />
           <Skeleton className="h-4 w-24" />
         </div>
@@ -275,7 +275,7 @@ export function ProfilePage() {
         </AspectRatio>
         <div className="border-b px-4 py-4">
           <div className="flex items-start gap-3">
-            <Skeleton className="-mt-10 h-16 w-16 shrink-0 rounded-full border-4 border-background" />
+            <Skeleton className="-mt-10 h-16 w-16 shrink-0 rounded-none border-4 border-background" />
             <div className="flex-1 space-y-2 pt-1">
               <Skeleton className="h-5 w-1/3" />
               <Skeleton className="h-4 w-1/4" />
@@ -306,10 +306,10 @@ export function ProfilePage() {
   if (!profile) {
     return (
       <div className="flex flex-col items-center px-8 py-20 text-center">
-        <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-muted">
+        <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-none bg-muted">
           <Search className="h-10 w-10 text-muted-foreground" />
         </div>
-        <h2 className="text-xl font-bold">This account doesn't exist</h2>
+        <h2 className="text-[15px] font-medium">This account doesn't exist</h2>
         <p className="mt-1 text-muted-foreground">Try searching for another.</p>
         <BackButton variant="link" label="Go back" className="mt-4" />
       </div>
@@ -331,7 +331,7 @@ export function ProfilePage() {
   return (
     <div>
       {/* Header bar */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 border-b bg-background/80 px-4 py-2 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background px-4 py-2.5 font-mono">
         <BackButton />
         <div>
           <p className="text-sm font-semibold leading-tight">
@@ -385,7 +385,7 @@ export function ProfilePage() {
       <div className="border-b px-4 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="relative -mt-10 shrink-0 rounded-full border-4 border-background">
+            <div className="relative -mt-10 shrink-0 rounded-none border-4 border-background">
               <Avatar className="h-16 w-16">
                 {profilePictureUrl && (
                   <AvatarImage
@@ -400,7 +400,7 @@ export function ProfilePage() {
                 <>
                   <button
                     type="button"
-                    className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 transition-opacity hover:opacity-100"
+                    className="absolute inset-0 flex items-center justify-center rounded-none bg-black/40 opacity-0 transition-opacity hover:opacity-100"
                     onClick={selectAvatarImage}
                     disabled={isUploadingAvatar}
                     aria-label="Change profile picture"
@@ -415,13 +415,13 @@ export function ProfilePage() {
                 </>
               )}
               {isUploadingAvatar && (
-                <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
+                <div className="absolute inset-0 flex items-center justify-center rounded-none bg-black/50">
                   <Loader2 className="h-5 w-5 animate-spin text-white" />
                 </div>
               )}
             </div>
             <div>
-              <h2 className="text-lg font-bold leading-tight">
+              <h2 className="text-[15px] font-medium leading-tight">
                 {profile.displayName}
               </h2>
               <p className="text-sm text-muted-foreground">
@@ -562,7 +562,7 @@ export function ProfilePage() {
       {/* Post timeline */}
       {profile.isBlockedByCurrentUser && !showBlockedPosts ? (
         <div className="flex flex-col items-center px-8 py-16 text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-none bg-destructive/10">
             <ShieldBan className="h-8 w-8 text-destructive" />
           </div>
           <p className="text-lg font-semibold">
@@ -589,7 +589,7 @@ export function ProfilePage() {
         </p>
       ) : posts.length === 0 ? (
         <div className="flex flex-col items-center px-8 py-16 text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-none bg-primary/10">
             <PenLine className="h-8 w-8 text-primary" />
           </div>
           <p className="text-lg font-semibold">No posts yet</p>

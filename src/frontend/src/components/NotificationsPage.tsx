@@ -118,7 +118,7 @@ export function NotificationsPage() {
 
   return (
     <div>
-      <div className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 border-b border-border bg-background font-mono">
         <div className="flex items-center gap-2 px-4 py-3">
           <BackButton className="shrink-0" />
           <h1 className="flex-1 text-lg font-semibold">Notifications</h1>
@@ -153,7 +153,7 @@ export function NotificationsPage() {
             // biome-ignore lint/suspicious/noArrayIndexKey: stable list
             <div key={i} className="flex items-start gap-3 px-4 py-3">
               <Skeleton className="h-4 w-4 shrink-0" />
-              <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+              <Skeleton className="h-9 w-9 shrink-0 rounded-none" />
               <div className="flex-1 space-y-2">
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="h-3 w-1/4" />
@@ -167,7 +167,7 @@ export function NotificationsPage() {
         </p>
       ) : notifications.length === 0 ? (
         <div className="flex flex-col items-center px-8 py-16 text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-none bg-primary/10">
             <Heart className="h-8 w-8 text-primary" />
           </div>
           <p className="text-lg font-semibold">No notifications yet</p>
@@ -214,7 +214,7 @@ export function NotificationsPage() {
                   </p>
                 </div>
                 {!notif.isRead && (
-                  <div className="mt-2 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                  <div className="mt-2 h-2 w-2 shrink-0 rounded-none bg-primary" />
                 )}
               </>
             );

@@ -124,7 +124,7 @@ export function PostCard({ post }: PostCardProps) {
             </span>
           </div>
           <div className="flex gap-3 px-4 pb-3 pt-1">
-            <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+            <Skeleton className="h-10 w-10 shrink-0 rounded-none" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-4 w-1/3" />
               <Skeleton className="h-4 w-2/3" />
@@ -198,11 +198,11 @@ export function PostCard({ post }: PostCardProps) {
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1 truncate text-sm">
+            <div className="flex items-center gap-1 truncate font-mono text-[11px] tracking-[0.02em]">
               <Link
                 to="/$username"
                 params={{ username: contentPost.authorUsername }}
-                className="truncate font-semibold hover:underline"
+                className="truncate font-medium text-foreground hover:underline"
                 onClick={(e) => e.stopPropagation()}
               >
                 {contentPost.authorDisplayName}
@@ -215,12 +215,12 @@ export function PostCard({ post }: PostCardProps) {
               >
                 @{contentPost.authorUsername}
               </Link>
-              <span className="shrink-0 text-muted-foreground">·</span>
+              <span className="shrink-0 text-muted-foreground/60">·</span>
               <span className="shrink-0 text-muted-foreground">
                 {formatDistanceToNow(createdDate, { addSuffix: true })}
               </span>
               {contentPost.editedAt != null && (
-                <span className="shrink-0 text-xs text-muted-foreground">
+                <span className="shrink-0 text-[10px] text-muted-foreground">
                   (edited)
                 </span>
               )}
@@ -293,13 +293,13 @@ export function PostCard({ post }: PostCardProps) {
               {contentPost.text && (
                 <PostText
                   text={contentPost.text}
-                  className="mt-1 whitespace-pre-wrap break-words text-sm"
+                  className="mt-1.5 whitespace-pre-wrap break-words font-sans text-[15px] leading-[1.55]"
                 />
               )}
               {contentMediaUrl &&
                 (contentMediaType === "video" ? (
                   <div
-                    className="mt-2 w-full overflow-hidden rounded-xl border"
+                    className="mt-2 w-full overflow-hidden border"
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
@@ -319,7 +319,7 @@ export function PostCard({ post }: PostCardProps) {
                 ) : (
                   <button
                     type="button"
-                    className="mt-2 block w-full cursor-pointer overflow-hidden rounded-xl border"
+                    className="mt-2 block w-full cursor-pointer overflow-hidden border"
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowLightbox(true);
@@ -339,7 +339,7 @@ export function PostCard({ post }: PostCardProps) {
                 <Link
                   to="/post/$id"
                   params={{ id: refPost.id.toString() }}
-                  className="mt-2 block w-full rounded-xl border p-3 text-left transition-colors hover:bg-muted/50"
+                  className="mt-2 block w-full border p-3 text-left transition-colors hover:bg-muted/50"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-center gap-1 text-sm">
@@ -361,7 +361,7 @@ export function PostCard({ post }: PostCardProps) {
                     <span className="truncate text-muted-foreground">
                       @{refPost.authorUsername}
                     </span>
-                    <span className="shrink-0 text-muted-foreground">·</span>
+                    <span className="shrink-0 text-muted-foreground/60">·</span>
                     <span className="shrink-0 text-muted-foreground">
                       {formatDistanceToNow(fromNanoseconds(refPost.createdAt), {
                         addSuffix: true,
@@ -396,16 +396,16 @@ export function PostCard({ post }: PostCardProps) {
                 </Link>
               )}
               {isQuote && !refPost && isLoadingReferenced && (
-                <div className="mt-2 rounded-xl border p-3">
+                <div className="mt-2 border p-3">
                   <div className="flex items-center gap-2">
-                    <Skeleton className="h-5 w-5 rounded-full" />
+                    <Skeleton className="h-5 w-5 rounded-none" />
                     <Skeleton className="h-3 w-24" />
                   </div>
                   <Skeleton className="mt-2 h-4 w-3/4" />
                 </div>
               )}
               {isQuote && !refPost && !isLoadingReferenced && (
-                <div className="mt-2 rounded-xl border p-3 text-sm text-muted-foreground">
+                <div className="mt-2 border p-3 text-sm text-muted-foreground">
                   This post is unavailable
                 </div>
               )}
@@ -436,7 +436,7 @@ export function PostCard({ post }: PostCardProps) {
                     <button
                       type="button"
                       className={cn(
-                        "flex items-center gap-1 text-sm transition-colors",
+                        "flex items-center gap-1 font-mono text-[11px] tabular-nums transition-colors",
                         actionPost.isRepostedByCurrentUser
                           ? "text-green-500"
                           : "text-muted-foreground hover:text-green-500",
@@ -469,7 +469,7 @@ export function PostCard({ post }: PostCardProps) {
                 <button
                   type="button"
                   className={cn(
-                    "flex items-center gap-1 text-sm transition-colors",
+                    "flex items-center gap-1 font-mono text-[11px] tabular-nums transition-colors",
                     actionPost.isLikedByCurrentUser
                       ? "text-red-500"
                       : "text-muted-foreground hover:text-red-500",

@@ -48,7 +48,7 @@ export function SearchPage() {
 
   return (
     <div>
-      <div className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 border-b border-border bg-background font-mono">
         <div className="flex items-center gap-2 px-4 py-2">
           <BackButton className="shrink-0" />
           <form onSubmit={handleSubmit} className="flex-1">
@@ -81,7 +81,7 @@ export function SearchPage() {
 
       {!activeQuery ? (
         <div className="flex flex-col items-center px-8 py-16 text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-none bg-primary/10">
             <Search className="h-8 w-8 text-primary" />
           </div>
           <p className="text-lg font-semibold">Search MicroBlog</p>

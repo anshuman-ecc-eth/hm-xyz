@@ -12,7 +12,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Bell, Home, LogOut, Moon, Search, Sun, User } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useProfile, useUnreadNotificationCount } from "../hooks/useQueries";
+import {
+  useProfile,
+  useUnreadNotificationCount,
+} from "../hooks/useQueries";
 import { getInitials } from "../utils/formatting";
 
 const NAV_ITEMS = [
@@ -56,45 +59,53 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
     : null;
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="px-3 pt-5 pb-6">
+    <div className="flex h-full flex-col font-mono">
+      <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
         <Link
           to="/"
-          className="flex items-center gap-3 rounded-lg px-3 py-1 transition-opacity hover:opacity-80"
+          className="flex items-center transition-opacity hover:opacity-70"
           onClick={onNavigate}
         >
-          <span className="text-xl font-bold tracking-tight">MicroBlog</span>
+          <img
+            src="/brand/hyvmind_logo_light.png"
+            alt="Hyvmind"
+            className="h-6 w-auto dark:hidden"
+          />
+          <img
+            src="/brand/hyvmind_logo_dark.png"
+            alt="Hyvmind"
+            className="hidden h-6 w-auto dark:block"
+          />
         </Link>
       </div>
 
-      <nav className="flex-1 px-3">
-        <ul className="space-y-1">
-          {NAV_ITEMS.map((item) => {
+      <nav className="flex-1 py-2">
+        <ul>
+          {NAV_ITEMS.map((item, index) => {
             const active = isNavActive(item.to, currentPath);
             return (
               <li key={item.to}>
                 <Link
                   to={item.to}
                   className={cn(
-                    "flex items-center gap-3 rounded-full px-4 py-3 text-[15px] transition-colors",
+                    "group flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors",
+                    "border-l-2",
                     active
-                      ? "font-bold text-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                      ? "border-l-primary bg-accent text-foreground"
+                      : "border-l-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
                   )}
                   onClick={onNavigate}
                 >
-                  <item.icon
-                    className={cn(
-                      "h-5 w-5 shrink-0",
-                      active && "stroke-[2.5px]",
-                    )}
-                  />
+                  <span className="w-6 shrink-0 text-[10px] tracking-[0.08em] text-muted-foreground">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   <span className="flex-1">{item.label}</span>
                   {item.to === "/notifications" &&
                     !!unreadCount &&
                     unreadCount > 0 && (
-                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
-                        {unreadCount > 99 ? "99+" : unreadCount}
+                      <span className="flex h-4 min-w-4 items-center justify-center bg-primary px-1 text-[10px] tabular-nums text-primary-foreground">
+                        {unreadCount > 99 ? "99+" : unreadCount.toString()}
                       </span>
                     )}
                 </Link>
@@ -104,9 +115,9 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
         </ul>
       </nav>
 
-      <div className="mt-2 px-3 py-3">
+      <div className="border-t border-border">
         {isProfileError ? (
-          <div className="px-3 py-2 text-sm text-destructive">
+          <div className="px-4 py-3 text-[11px] text-destructive">
             Failed to load profile
           </div>
         ) : (
@@ -114,7 +125,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex w-full items-center gap-3 rounded-full px-3 py-2 text-left transition-colors hover:bg-accent"
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
               >
                 <Avatar className="h-8 w-8 shrink-0">
                   {profilePictureUrl && (
@@ -124,15 +135,15 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                       className="object-cover"
                     />
                   )}
-                  <AvatarFallback className="bg-primary/10 text-[10px] text-primary">
+                  <AvatarFallback className="bg-muted text-[10px] text-foreground">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex min-w-0 flex-1 flex-col leading-tight">
-                  <span className="truncate text-sm font-medium">
+                  <span className="truncate text-[12px] text-foreground">
                     {profile?.displayName}
                   </span>
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span className="truncate text-[10px] tracking-[0.04em] text-muted-foreground">
                     @{profile?.username}
                   </span>
                 </div>
@@ -141,7 +152,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
             <DropdownMenuContent
               side="top"
               align="start"
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-[180px]"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-[190px] font-mono text-[12px]"
             >
               <DropdownMenuItem asChild>
                 <Link
@@ -149,20 +160,23 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                   params={{ username: profile?.username ?? "" }}
                   onClick={onNavigate}
                 >
-                  <User />
+                  <User className="h-3.5 w-3.5" strokeWidth={1.5} />
                   Profile
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               >
-                <Sun className="dark:hidden" />
-                <Moon className="hidden dark:block" />
+                <Sun className="h-3.5 w-3.5 dark:hidden" strokeWidth={1.5} />
+                <Moon
+                  className="hidden h-3.5 w-3.5 dark:block"
+                  strokeWidth={1.5}
+                />
                 {theme === "dark" ? "Light mode" : "Dark mode"}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout}>
-                <LogOut />
+                <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
                 Log out
               </DropdownMenuItem>
             </DropdownMenuContent>

@@ -208,7 +208,7 @@ export function EditProfileDialog({
                 </Avatar>
                 <button
                   type="button"
-                  className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 transition-opacity hover:opacity-100"
+                  className="absolute inset-0 flex items-center justify-center rounded-none bg-black/40 opacity-0 transition-opacity hover:opacity-100"
                   onClick={selectAvatarImage}
                   disabled={isSaving}
                 >

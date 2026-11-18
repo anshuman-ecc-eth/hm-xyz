@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { useInternetIdentity } from "@caffeineai/core-infrastructure";
 import { Heart, Loader2, MessageCircle, Repeat2 } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
+import { LandingGraph } from "./LandingGraph";
 
 interface MockPostData {
   initials: string;
@@ -77,73 +78,75 @@ const FEED_POSTS: MockPostData[] = [
     reposts: 12,
     color: "bg-rose-600",
   },
-  {
-    initials: "SD",
-    name: "Sam Davis",
-    handle: "indie_dev",
-    time: "30m",
-    text: "Building in public, day 47. Almost ready to launch",
-    likes: 7,
-    replies: 2,
-    reposts: 0,
-    color: "bg-emerald-600",
-  },
-  {
-    initials: "CP",
-    name: "Chris P",
-    handle: "chrisfoto",
-    time: "3h",
-    text: "Beautiful sunset from my balcony today #photography",
-    likes: 19,
-    replies: 0,
-    reposts: 2,
-    color: "bg-violet-600",
-  },
 ];
 
-function MockFeedPost({
+const HAIRLINE = "border-[#d2d2d7] dark:border-[#38383a]";
+const MUTED = "text-[#6e6e73] dark:text-[#a1a1a6]";
+
+function RecordRow({
   post,
+  index,
   isLast,
 }: {
   post: MockPostData;
+  index: number;
   isLast?: boolean;
 }) {
   return (
-    <div
-      className={cn("flex items-start gap-3 px-4 py-3", !isLast && "border-b")}
+    <article
+      className={cn(
+        "grid grid-cols-[2.25rem_1fr] gap-x-4 px-4 py-5 sm:grid-cols-[3rem_1fr] sm:px-6",
+        !isLast && `border-b ${HAIRLINE}`,
+      )}
     >
-      <div
-        className={`h-10 w-10 rounded-full flex items-center justify-center text-xs font-semibold text-white shrink-0 ${post.color}`}
-      >
-        {post.initials}
+      <div className="flex flex-col items-start gap-2.5">
+        <span className={cn("text-[10px] tracking-[0.08em]", MUTED)}>
+          {String(index).padStart(2, "0")}
+        </span>
+        <span
+          className={cn(
+            "flex h-8 w-8 items-center justify-center text-[10px] tracking-[0.06em] text-white",
+            post.color,
+          )}
+        >
+          {post.initials}
+        </span>
       </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1 text-sm">
-          <span className="font-semibold text-card-foreground truncate">
-            {post.name}
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px]">
+          <span className="font-medium">{post.name}</span>
+          <span className={MUTED}>@{post.handle}</span>
+          <span className={cn("ml-auto text-[11px] tabular-nums", MUTED)}>
+            {post.time}
           </span>
-          <span className="text-muted-foreground truncate">@{post.handle}</span>
-          <span className="text-muted-foreground shrink-0">· {post.time}</span>
         </div>
-        <p className="mt-0.5 text-sm text-card-foreground leading-snug">
+
+        <p className="mt-2 max-w-[62ch] text-[15px] leading-[1.6]">
           {post.text}
         </p>
-        <div className="mt-2 flex items-center gap-6 text-muted-foreground">
-          <span className="flex items-center gap-1 text-xs">
-            <MessageCircle className="h-4 w-4" />
-            {post.replies > 0 && post.replies}
+
+        <div
+          className={cn(
+            "mt-3.5 flex items-center gap-5 text-[11px] tabular-nums",
+            MUTED,
+          )}
+        >
+          <span className="flex items-center gap-1.5">
+            <MessageCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
+            {post.replies}
           </span>
-          <span className="flex items-center gap-1 text-xs">
-            <Repeat2 className="h-4 w-4" />
-            {post.reposts > 0 && post.reposts}
+          <span className="flex items-center gap-1.5">
+            <Repeat2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            {post.reposts}
           </span>
-          <span className="flex items-center gap-1 text-xs">
-            <Heart className="h-4 w-4" />
-            {post.likes > 0 && post.likes}
+          <span className="flex items-center gap-1.5">
+            <Heart className="h-3.5 w-3.5" strokeWidth={1.5} />
+            {post.likes}
           </span>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -153,97 +156,218 @@ export function LandingPage() {
   const disabled = isInitializing || isLoggingIn;
 
   return (
-    <div className="h-dvh overflow-hidden bg-landing relative flex flex-col">
-      {/* Top bar */}
-      <header className="shrink-0 px-6 sm:px-10 lg:px-16 py-5 flex items-center justify-between max-w-7xl mx-auto w-full animate-fade-up">
-        <span className="text-xl font-bold text-foreground tracking-tight">
-          MicroBlog
+    <div className="flex h-dvh overflow-hidden bg-[#fbfbfb] font-mono text-[#1d1d1f] dark:bg-[#0c0c0c] dark:text-white">
+      {/* Rail */}
+      <aside
+        className={cn(
+          "hidden w-14 shrink-0 flex-col items-center justify-between border-r py-5 sm:flex",
+          HAIRLINE,
+        )}
+      >
+        <span className="flex items-center">
+          <img
+            src="/brand/hyvmind_logo_light.png"
+            alt="Hyvmind"
+            className="h-6 w-auto dark:hidden"
+          />
+          <img
+            src="/brand/hyvmind_logo_dark.png"
+            alt="Hyvmind"
+            className="hidden h-6 w-auto dark:block"
+          />
         </span>
-        <ThemeToggle />
-      </header>
+        <span
+          className={cn(
+            "rotate-180 text-[10px] tracking-[0.08em] [writing-mode:vertical-rl]",
+            MUTED,
+          )}
+        >
+          own your interpretations
+        </span>
+        <span className={cn("h-6 w-px bg-[#d2d2d7] dark:bg-[#38383a]")} />
+      </aside>
 
-      {/* Hero */}
-      <main className="flex-1 flex flex-col items-center justify-center text-center px-6 min-h-0">
-        <h1 className="font-display text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold text-foreground leading-[1.05] tracking-[-0.03em] animate-fade-up-delay-1">
-          Share what matters.
-        </h1>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Top bar */}
+        <header
+          className={cn(
+            "flex h-14 shrink-0 items-center justify-between border-b px-4 sm:px-6",
+            HAIRLINE,
+          )}
+        >
+          <span className="flex items-center sm:hidden">
+            <img
+              src="/brand/hyvmind_logo_light.png"
+              alt="Hyvmind"
+              className="h-6 w-auto dark:hidden"
+            />
+            <img
+              src="/brand/hyvmind_logo_dark.png"
+              alt="Hyvmind"
+              className="hidden h-6 w-auto dark:block"
+            />
+          </span>
+          <span className={cn("hidden text-[11px] tracking-[0.08em] sm:block", MUTED)}>
+            hyvmind.xyz
+          </span>
 
-        <p className="mt-4 sm:mt-6 text-muted-foreground text-sm sm:text-base md:text-lg max-w-sm mx-auto leading-relaxed animate-fade-up-delay-2">
-          Share thoughts, spark conversations, and own your content on the
-          decentralized web.
-        </p>
+          <div className="flex items-center gap-4">
+            <span
+              className={cn(
+                "flex items-center gap-1.5 text-[10px] tracking-[0.08em]",
+                MUTED,
+              )}
+            >
+              <span className="h-1.5 w-1.5 bg-[#30d158]" />
+              signed out
+            </span>
+            <ThemeToggle />
+          </div>
+        </header>
 
-        <div className="mt-5 sm:mt-8 flex w-full max-w-xs flex-col items-center gap-3 animate-fade-up-delay-3">
-          <button
-            type="button"
-            onClick={() => login({ provider: "google" })}
-            disabled={disabled}
-            className="flex w-full items-center justify-center whitespace-nowrap rounded-full bg-foreground text-landing px-4 py-3 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoggingIn ? (
-              <span className="flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Signing in...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white">
-                  <GoogleIcon />
-                </span>
-                Continue with Google
-              </span>
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          {/* Hero */}
+          <section
+            className={cn(
+              "grid border-b lg:grid-cols-[1.02fr_1fr]",
+              HAIRLINE,
             )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => login()}
-            disabled={disabled}
-            className="flex w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-full bg-card text-card-foreground border shadow-sm px-4 py-3 text-sm font-semibold transition-colors hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <InternetIdentityIcon className="h-3 w-6 shrink-0" />
-            Sign in with Internet Identity
-          </button>
+            <div className="px-4 py-14 sm:px-6 sm:py-20">
+              <h1 className="max-w-[18ch] text-[clamp(1.9rem,5vw,3.5rem)] font-medium leading-[1.04] tracking-[-0.03em]">
+                A new way to research.
+              </h1>
+              <p
+                className={cn(
+                  "mt-6 max-w-[54ch] text-[14px] leading-[1.7]",
+                  MUTED,
+                )}
+              >
+                Each post is a contribution to an infinite web.
+                <br />
+                It is recorded, organised and credited to your account.
+              </p>
+            </div>
+
+            <div
+              className={cn(
+                "relative h-[240px] border-t sm:h-[300px] lg:h-auto lg:min-h-[320px] lg:border-l lg:border-t-0",
+                HAIRLINE,
+              )}
+            >
+              <div className="absolute inset-0 p-2">
+                <LandingGraph />
+              </div>
+            </div>
+          </section>
+
+          {/* Sign in */}
+          <section
+            className={cn(
+              "grid border-b sm:grid-cols-2",
+              HAIRLINE,
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => login({ provider: "google" })}
+              disabled={disabled}
+              className={cn(
+                "flex items-center justify-between gap-3 px-4 py-4 text-left text-[13px] transition-colors sm:px-6",
+                "bg-[#1d1d1f] text-[#fbfbfb] hover:bg-[#333336]",
+                "dark:bg-white dark:text-[#0c0c0c] dark:hover:bg-[#e8e8ea]",
+                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#007aff]",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            >
+              <span className="flex items-center gap-3">
+                {isLoggingIn ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <GoogleIcon />
+                )}
+                {isLoggingIn ? "Signing in…" : "Continue with Google"}
+              </span>
+              <span className="text-[10px] tracking-[0.08em] opacity-60">
+                [enter]
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => login()}
+              disabled={disabled}
+              className={cn(
+                "flex items-center justify-between gap-3 border-t px-4 py-4 text-left text-[13px] transition-colors sm:border-l sm:border-t-0 sm:px-6",
+                HAIRLINE,
+                "hover:bg-[#fafafa] dark:hover:bg-[#161618]",
+                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#007aff]",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            >
+              <span className="flex items-center gap-3">
+                <InternetIdentityIcon className="h-3 w-6 shrink-0" />
+                Sign in with Internet Identity
+              </span>
+              <span className={cn("text-[10px] tracking-[0.08em]", MUTED)}>
+                [ii]
+              </span>
+            </button>
+          </section>
 
           {isLoginError && (
-            <p className="text-destructive text-xs">
+            <p className="border-b border-[#ff3b30] px-4 py-3 text-[11px] text-[#ff3b30] sm:px-6 dark:text-[#ff453a]">
               {loginError?.message ?? "Sign-in failed. Please try again."}
             </p>
           )}
 
-          <span className="text-muted-foreground text-xs">
-            &copy; 2026. Built with ❤️ using{" "}
+          {/* Record */}
+          <section>
+            <div
+              className={cn(
+                "flex items-baseline justify-between border-b px-4 py-3 text-[10px] tracking-[0.08em] sm:px-6",
+                HAIRLINE,
+                MUTED,
+              )}
+            >
+              <span>the record</span>
+              <span className="tabular-nums">
+                {String(FEED_POSTS.length).padStart(2, "0")} entries
+              </span>
+            </div>
+
+            {FEED_POSTS.map((post, i) => (
+              <RecordRow
+                key={post.handle}
+                post={post}
+                index={i + 1}
+                isLast={i === FEED_POSTS.length - 1}
+              />
+            ))}
+          </section>
+        </main>
+
+        {/* Footer */}
+        <footer
+          className={cn(
+            "flex h-10 shrink-0 items-center justify-between border-t px-4 text-[10px] tracking-[0.08em] sm:px-6",
+            HAIRLINE,
+            MUTED,
+          )}
+        >
+          <span>&copy; 2026 hyvmind.xyz</span>
+          <span>
+            built with{" "}
             <a
               href="https://caffeine.ai"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline underline-offset-2 hover:text-foreground transition-colors"
+              className="underline underline-offset-2 hover:text-[#1d1d1f] dark:hover:text-white"
             >
               caffeine.ai
             </a>
           </span>
-        </div>
-      </main>
-
-      {/* Feed preview */}
-      <div className="shrink-0 px-4 sm:px-10 lg:px-16 max-w-3xl mx-auto w-full animate-fade-up-delay-3">
-        <div className="rounded-t-2xl border border-b-0 bg-card shadow-2xl overflow-hidden">
-          {/* Tab bar */}
-          <div className="flex border-b">
-            <div className="flex-1 py-3 text-sm font-semibold text-center text-foreground border-b-2 border-primary">
-              For You
-            </div>
-            <div className="flex-1 py-3 text-sm font-medium text-center text-muted-foreground">
-              Following
-            </div>
-          </div>
-          {/* Mock posts - show 2 on mobile, all on sm+ */}
-          {FEED_POSTS.map((post, i) => (
-            <div key={post.handle} className={cn(i >= 2 && "hidden sm:block")}>
-              <MockFeedPost post={post} isLast={i === FEED_POSTS.length - 1} />
-            </div>
-          ))}
-        </div>
+        </footer>
       </div>
     </div>
   );

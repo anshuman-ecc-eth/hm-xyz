@@ -47,7 +47,7 @@ export function UserResults({ query }: UserResultsProps) {
         {Array.from({ length: 3 }).map((_, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: stable list
           <div key={i} className="flex items-center gap-3">
-            <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+            <Skeleton className="h-10 w-10 shrink-0 rounded-none" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-4 w-1/3" />
               <Skeleton className="h-3 w-1/4" />
@@ -69,7 +69,7 @@ export function UserResults({ query }: UserResultsProps) {
   if (!users || users.length === 0) {
     return (
       <div className="flex flex-col items-center px-8 py-16 text-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-none bg-primary/10">
           <Users className="h-8 w-8 text-primary" />
         </div>
         <p className="text-lg font-semibold">No results</p>

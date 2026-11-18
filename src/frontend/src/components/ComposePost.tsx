@@ -143,7 +143,7 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
         : "Post";
 
   return (
-    <div className="border-b px-4 py-3">
+    <div className="border-b border-border px-4 py-3 font-mono">
       <Textarea
         id={isReplyMode ? "reply-textarea" : undefined}
         placeholder={placeholder}
@@ -152,15 +152,15 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
         onKeyDown={handleKeyDown}
         disabled={isSubmitting}
         className={cn(
-          "resize-none rounded-none border-0 p-0 shadow-none focus-visible:ring-0",
-          isReplyMode ? "min-h-[60px] text-sm" : "min-h-[80px] text-base",
+          "resize-none rounded-none border-0 bg-transparent p-0 font-sans shadow-none placeholder:text-muted-foreground focus-visible:ring-0",
+          isReplyMode ? "min-h-[60px] text-sm" : "min-h-[80px] text-[15px]",
         )}
       />
       {isQuoteMode && quotedPost && (
-        <div className="relative mt-2 rounded-lg border p-3">
+        <div className="relative mt-2 border border-border p-3">
           <button
             type="button"
-            className="absolute right-2 top-2 rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="absolute right-2 top-2 rounded-none p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={handleDismissQuote}
             aria-label="Dismiss quote"
           >
@@ -179,14 +179,14 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
                 {getInitials(quotedPost.authorDisplayName)}
               </AvatarFallback>
             </Avatar>
-            <span className="text-sm font-semibold">
+            <span className="text-[12px] font-medium">
               {quotedPost.authorDisplayName}
             </span>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground">
               @{quotedPost.authorUsername}
             </span>
-            <span className="text-sm text-muted-foreground">·</span>
-            <span className="text-sm text-muted-foreground">
+            <span className="text-[11px] text-muted-foreground">·</span>
+            <span className="text-[11px] text-muted-foreground">
               {formatDistanceToNow(fromNanoseconds(quotedPost.createdAt), {
                 addSuffix: true,
               })}
@@ -212,14 +212,14 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
               <img
                 src={previewUrl}
                 alt="Attachment preview"
-                className="h-full w-full rounded-md object-cover"
+                className="h-full w-full object-cover"
               />
             )}
           </AspectRatio>
           <Button
             variant="secondary"
             size="icon"
-            className="absolute right-1 top-1 h-6 w-6 rounded-full"
+            className="absolute right-1 top-1 h-6 w-6 rounded-none"
             onClick={removeMedia}
             disabled={isSubmitting}
             aria-label="Remove media"
@@ -227,7 +227,7 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
             <X className="h-3 w-3" />
           </Button>
           {uploadProgress !== null && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/50">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50">
               <span className="text-sm font-medium text-white">
                 {Math.round(uploadProgress)}%
               </span>
@@ -252,7 +252,7 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
           </Button>
           <span
             className={cn(
-              "text-sm",
+              "text-[11px] tabular-nums",
               isOverLimit ? "text-destructive" : "text-muted-foreground",
             )}
           >
@@ -263,6 +263,7 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
           onClick={handleSubmit}
           disabled={isEmpty || isOverLimit || isSubmitting}
           size="sm"
+          className="rounded-none border border-foreground bg-foreground text-[11px] tracking-[0.08em] text-background hover:bg-foreground/90"
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
           {buttonLabel}

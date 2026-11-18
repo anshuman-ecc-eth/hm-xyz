@@ -99,7 +99,7 @@ export function PostDetail() {
           className="mb-4 text-muted-foreground"
         />
         <div className="flex gap-3">
-          <Skeleton className="h-12 w-12 rounded-full shrink-0" />
+          <Skeleton className="h-12 w-12 rounded-none shrink-0" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-4 w-1/3" />
             <Skeleton className="h-4 w-full" />
@@ -139,7 +139,7 @@ export function PostDetail() {
   return (
     <div>
       {/* Header */}
-      <div className="sticky top-0 z-10 flex items-center gap-4 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background px-4 py-2.5 font-mono">
         <BackButton />
         <h2 className="text-lg font-semibold">Post</h2>
       </div>
@@ -230,7 +230,7 @@ export function PostDetail() {
               className="mt-3 whitespace-pre-wrap break-words text-base"
             />
             {mediaUrl && (
-              <div className="mt-3 overflow-hidden rounded-xl border">
+              <div className="mt-3 overflow-hidden border">
                 {post.mediaType === "video" ? (
                   // biome-ignore lint/a11y/useMediaCaption: media element
                   <video
@@ -303,7 +303,7 @@ export function PostDetail() {
         <div className="flex justify-around">
           <button
             type="button"
-            className="flex items-center gap-2 rounded-full p-2 text-muted-foreground transition-colors hover:text-primary"
+            className="flex items-center gap-2 rounded-none p-2 text-muted-foreground transition-colors hover:text-primary"
             onClick={() => document.getElementById("reply-textarea")?.focus()}
             aria-label="Reply"
           >
@@ -314,7 +314,7 @@ export function PostDetail() {
               <button
                 type="button"
                 className={cn(
-                  "flex items-center gap-2 rounded-full p-2 transition-colors",
+                  "flex items-center gap-2 rounded-none p-2 transition-colors",
                   post.isRepostedByCurrentUser
                     ? "text-green-500"
                     : "text-muted-foreground hover:text-green-500",
@@ -339,7 +339,7 @@ export function PostDetail() {
           <button
             type="button"
             className={cn(
-              "flex items-center gap-2 rounded-full p-2 transition-colors",
+              "flex items-center gap-2 rounded-none p-2 transition-colors",
               post.isLikedByCurrentUser
                 ? "text-red-500"
                 : "text-muted-foreground hover:text-red-500",
@@ -370,7 +370,7 @@ export function PostDetail() {
           {Array.from({ length: 3 }).map((_, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: stable list
             <div key={i} className="flex gap-3">
-              <Skeleton className="h-10 w-10 rounded-full shrink-0" />
+              <Skeleton className="h-10 w-10 rounded-none shrink-0" />
               <div className="flex-1 space-y-2">
                 <Skeleton className="h-4 w-1/3" />
                 <Skeleton className="h-4 w-full" />
@@ -386,7 +386,7 @@ export function PostDetail() {
 
       {!isLoadingReplies && !isRepliesError && replies.length === 0 && (
         <div className="flex flex-col items-center px-8 py-12 text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-none bg-primary/10">
             <MessageCircle className="h-6 w-6 text-primary" />
           </div>
           <p className="font-semibold">No replies yet</p>

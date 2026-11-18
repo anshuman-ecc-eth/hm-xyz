@@ -14,7 +14,7 @@ export function NewPostsIndicator({ count, onClick }: NewPostsIndicatorProps) {
       <Button
         variant="outline"
         size="sm"
-        className="gap-1.5 rounded-full text-primary shadow-sm"
+        className="gap-1.5 rounded-none text-primary shadow-sm"
         onClick={onClick}
       >
         <ArrowUp className="h-3.5 w-3.5" />

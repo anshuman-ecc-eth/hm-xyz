@@ -13,7 +13,7 @@ export function Feed() {
 
   return (
     <Tabs defaultValue="home" className="w-full">
-      <TabsList className="sticky top-0 z-10 h-auto w-full rounded-none border-b bg-background/80 p-0 backdrop-blur-sm">
+      <TabsList className="sticky top-0 z-10 h-auto w-full justify-start gap-px rounded-none border-b border-border bg-background p-0">
         <TabsTrigger value="home" className={TAB_TRIGGER_CLASS}>
           Home
         </TabsTrigger>
