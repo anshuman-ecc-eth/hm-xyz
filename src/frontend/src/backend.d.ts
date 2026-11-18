@@ -7,41 +7,8 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
-export class ExternalBlob {
-    getBytes(): Promise<Uint8Array<ArrayBuffer>>;
-    getDirectURL(): string;
-    static fromURL(url: string): ExternalBlob;
-    static fromBytes(blob: Uint8Array<ArrayBuffer>): ExternalBlob;
-    withUploadProgress(onProgress: (percentage: number) => void): ExternalBlob;
-}
-export interface TrendingHashtag {
-    tag: string;
-    count: bigint;
-}
-export type Time = bigint;
-export type PostType = {
-    __kind__: "repost";
-    repost: bigint;
-} | {
-    __kind__: "quote";
-    quote: bigint;
-} | {
-    __kind__: "original";
-    original: null;
-} | {
-    __kind__: "reply";
-    reply: bigint;
-};
-export interface PaginatedPosts {
-    hasMore: boolean;
-    posts: Array<PostResponse>;
-    nextCursor?: bigint;
-}
-export interface PaginatedNotifications {
-    hasMore: boolean;
-    notifications: Array<Notification>;
-    nextCursor?: bigint;
-}
+import type { ExternalBlob } from "@caffeineai/object-storage";
+export type { ExternalBlob } from "@caffeineai/object-storage";
 export type Error_ = {
     __kind__: "FrontendOriginsNotConfigured";
     FrontendOriginsNotConfigured: null;
@@ -86,21 +53,19 @@ export type Error_ = {
         expected: Array<string>;
     };
 };
-export interface UserProfileResponse {
-    bio: string;
-    isBlockedByCurrentUser: boolean;
+export interface FollowUserResponse {
     principal: Principal;
     username: string;
     displayName: string;
-    isMutedByCurrentUser: boolean;
-    followersCount: bigint;
-    createdAt: Time;
-    updatedAt: Time;
-    headerImageHash?: ExternalBlob;
-    followingCount: bigint;
-    isFollowedByCurrentUser: boolean;
     profilePictureHash?: ExternalBlob;
-    postsCount: bigint;
+}
+export interface Notification {
+    id: bigint;
+    notificationType: NotificationType;
+    createdAt: Time;
+    isRead: boolean;
+    actorUsername: string;
+    actorPrincipal: Principal;
 }
 export type NotificationType = {
     __kind__: "repost";
@@ -121,26 +86,20 @@ export type NotificationType = {
     __kind__: "follow";
     follow: null;
 };
-export type Result = {
-    __kind__: "ok";
-    ok: null;
-} | {
-    __kind__: "err";
-    err: Error_;
-};
-export interface FollowUserResponse {
-    principal: Principal;
-    username: string;
-    displayName: string;
-    profilePictureHash?: ExternalBlob;
+export interface PaginatedFollows {
+    nextOffset?: bigint;
+    hasMore: boolean;
+    users: Array<FollowUserResponse>;
 }
-export interface Notification {
-    id: bigint;
-    notificationType: NotificationType;
-    createdAt: Time;
-    isRead: boolean;
-    actorUsername: string;
-    actorPrincipal: Principal;
+export interface PaginatedNotifications {
+    hasMore: boolean;
+    notifications: Array<Notification>;
+    nextCursor?: bigint;
+}
+export interface PaginatedPosts {
+    hasMore: boolean;
+    posts: Array<PostResponse>;
+    nextCursor?: bigint;
 }
 export interface PostResponse {
     id: bigint;
@@ -160,6 +119,31 @@ export interface PostResponse {
     authorDisplayName: string;
     isLikedByCurrentUser: boolean;
 }
+export type PostType = {
+    __kind__: "repost";
+    repost: bigint;
+} | {
+    __kind__: "quote";
+    quote: bigint;
+} | {
+    __kind__: "original";
+    original: null;
+} | {
+    __kind__: "reply";
+    reply: bigint;
+};
+export type Result = {
+    __kind__: "ok";
+    ok: null;
+} | {
+    __kind__: "err";
+    err: Error_;
+};
+export type Time = bigint;
+export interface TrendingHashtag {
+    tag: string;
+    count: bigint;
+}
 export interface UserProfile {
     bio: string;
     username: string;
@@ -169,10 +153,21 @@ export interface UserProfile {
     headerImageHash?: ExternalBlob;
     profilePictureHash?: ExternalBlob;
 }
-export interface PaginatedFollows {
-    nextOffset?: bigint;
-    hasMore: boolean;
-    users: Array<FollowUserResponse>;
+export interface UserProfileResponse {
+    bio: string;
+    isBlockedByCurrentUser: boolean;
+    principal: Principal;
+    username: string;
+    displayName: string;
+    isMutedByCurrentUser: boolean;
+    followersCount: bigint;
+    createdAt: Time;
+    updatedAt: Time;
+    headerImageHash?: ExternalBlob;
+    followingCount: bigint;
+    isFollowedByCurrentUser: boolean;
+    profilePictureHash?: ExternalBlob;
+    postsCount: bigint;
 }
 export enum UserRole {
     admin = "admin",
