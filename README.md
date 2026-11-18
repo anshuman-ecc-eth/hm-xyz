@@ -9,6 +9,24 @@ where notes become legal knowledge graphs. **xyz is the social layer; the app is
 where the knowledge graphs live.** This README covers xyz and the plan to connect
 the two.
 
+**Contents**
+
+- [Stack](#stack)
+  - [Live deployments](#live-deployments)
+- [Build & check](#build--check)
+- [Roadmap: connect posts to Hyvmind knowledge graphs](#roadmap-connect-posts-to-hyvmind-knowledge-graphs)
+  - [Goal](#goal)
+  - [Constraints (verified, not assumed)](#constraints-verified-not-assumed)
+  - [Decisions](#decisions)
+  - [Phases](#phases)
+    - [Phase 1 — citations](#phase-1--citations-xyz-only-zero-risk)
+    - [Phase 2 — principal link](#phase-2--principal-link-both)
+    - [Phase 3 — write from xyz](#phase-3--write-from-xyz-both)
+    - [Phase 4 — deep links](#phase-4--deep-links)
+  - [Not doing (and why)](#not-doing-and-why)
+  - [Open items](#open-items)
+  - [Reference — Hyvmind API shapes](#reference--hyvmind-api-shapes)
+
 ---
 
 ## Stack

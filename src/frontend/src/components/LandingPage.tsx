@@ -250,7 +250,15 @@ export function LandingPage() {
               MUTED,
             )}
           >
-            hyvmind.xyz
+            see also{" "}
+            <a
+              href="https://hyvmind.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 hover:text-[#1d1d1f] dark:hover:text-white"
+            >
+              hyvmind.app
+            </a>
           </span>
           <div className="ml-auto flex items-center gap-4">
             <span
