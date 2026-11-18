@@ -1,0 +1,7 @@
+node_modules/
+.mops/
+src/backend/.mops/
+/dist/
+src/frontend/dist/
+src/backend/dist/
+src/backend/backend.wasm
