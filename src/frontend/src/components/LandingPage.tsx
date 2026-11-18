@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { useInternetIdentity } from "@caffeineai/core-infrastructure";
 import { Heart, Loader2, MessageCircle, Repeat2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { LandingGraph } from "./LandingGraph";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -200,6 +201,26 @@ export function LandingPage() {
     useInternetIdentity();
   const disabled = isInitializing || isLoggingIn;
 
+  // `login` is fire-and-forget and `isLoggingIn` is shared across sign-in
+  // methods, so track which button was pressed to put the spinner on the right
+  // one. The flag clears whenever the attempt settles or fails.
+  const [pendingProvider, setPendingProvider] = useState<
+    "google" | "ii" | null
+  >(null);
+  useEffect(() => {
+    if (!isLoggingIn || isLoginError) setPendingProvider(null);
+  }, [isLoggingIn, isLoginError]);
+
+  const signInWithInternetIdentity = () => {
+    setPendingProvider("ii");
+    login();
+  };
+
+  const signInWithGoogle = () => {
+    setPendingProvider("google");
+    login({ provider: "google" });
+  };
+
   return (
     <div className="flex h-dvh overflow-hidden bg-[#fbfbfb] font-mono text-[#1d1d1f] dark:bg-[#0c0c0c] dark:text-white">
       {/* Rail */}
@@ -310,7 +331,7 @@ export function LandingPage() {
           <section className={cn("grid border-b sm:grid-cols-2", HAIRLINE)}>
             <button
               type="button"
-              onClick={() => login({ provider: "google" })}
+              onClick={signInWithInternetIdentity}
               disabled={disabled}
               className={cn(
                 "flex items-center justify-between gap-3 px-4 py-4 text-left text-[13px] transition-colors sm:px-6",
@@ -321,21 +342,23 @@ export function LandingPage() {
               )}
             >
               <span className="flex items-center gap-3">
-                {isLoggingIn ? (
+                {pendingProvider === "ii" ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <GoogleIcon />
+                  <InternetIdentityIcon className="h-3 w-6 shrink-0" />
                 )}
-                {isLoggingIn ? "Signing in…" : "Continue with Google"}
+                {pendingProvider === "ii"
+                  ? "Signing in…"
+                  : "Sign in with Internet Identity"}
               </span>
               <span className="text-[10px] tracking-[0.08em] opacity-60">
-                [enter]
+                [ii]
               </span>
             </button>
 
             <button
               type="button"
-              onClick={() => login()}
+              onClick={signInWithGoogle}
               disabled={disabled}
               className={cn(
                 "flex items-center justify-between gap-3 border-t px-4 py-4 text-left text-[13px] transition-colors sm:border-l sm:border-t-0 sm:px-6",
@@ -346,11 +369,17 @@ export function LandingPage() {
               )}
             >
               <span className="flex items-center gap-3">
-                <InternetIdentityIcon className="h-3 w-6 shrink-0" />
-                Sign in with Internet Identity
+                {pendingProvider === "google" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <GoogleIcon />
+                )}
+                {pendingProvider === "google"
+                  ? "Signing in…"
+                  : "Continue with Google"}
               </span>
               <span className={cn("text-[10px] tracking-[0.08em]", MUTED)}>
-                [ii]
+                [enter]
               </span>
             </button>
           </section>
