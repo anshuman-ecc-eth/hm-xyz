@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 import { useInternetIdentity } from "@caffeineai/core-infrastructure";
 import { Heart, Loader2, MessageCircle, Repeat2 } from "lucide-react";
-import { ThemeToggle } from "./ThemeToggle";
 import { LandingGraph } from "./LandingGraph";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface MockPostData {
   initials: string;
@@ -14,6 +14,7 @@ interface MockPostData {
   replies: number;
   reposts: number;
   color: string;
+  replyTo?: string;
 }
 
 function GoogleIcon() {
@@ -57,26 +58,51 @@ function InternetIdentityIcon({ className }: { className?: string }) {
 
 const FEED_POSTS: MockPostData[] = [
   {
-    initials: "AK",
-    name: "Anna K",
-    handle: "dev_anna",
+    initials: "J",
+    name: "Jehosh",
+    handle: "jehosh",
     time: "2h",
-    text: "Just deployed my first canister on ICP! The future is decentralized",
+    text: "Starting a curation on Article 371J :)",
     likes: 12,
     replies: 3,
     reposts: 1,
     color: "bg-sky-600",
   },
   {
-    initials: "MR",
-    name: "Maya R",
-    handle: "maya",
+    initials: "S",
+    name: "Sukriti",
+    handle: "sukriti",
+    replyTo: "jehosh",
     time: "1h",
-    text: "Your data should belong to you, not a corporation",
+    text: "Such an important but understudied area..",
     likes: 45,
     replies: 8,
     reposts: 12,
     color: "bg-rose-600",
+  },
+  {
+    initials: "SD",
+    name: "Sudeep",
+    handle: "sudeep",
+    replyTo: "sukriti",
+    time: "42m",
+    text: "Exactly, I don't know anyone else working on this!",
+    likes: 4,
+    replies: 0,
+    reposts: 0,
+    color: "bg-amber-600",
+  },
+  {
+    initials: "G",
+    name: "Gayatri",
+    handle: "gayatri",
+    replyTo: "jehosh",
+    time: "20m",
+    text: "Nice, we'll be following closely.",
+    likes: 6,
+    replies: 0,
+    reposts: 1,
+    color: "bg-teal-600",
   },
 ];
 
@@ -86,22 +112,35 @@ const MUTED = "text-[#6e6e73] dark:text-[#a1a1a6]";
 function RecordRow({
   post,
   index,
+  depth = 0,
   isLast,
 }: {
   post: MockPostData;
   index: number;
+  depth?: number;
   isLast?: boolean;
 }) {
+  const isReply = depth > 0;
+
   return (
     <article
+      style={{ paddingLeft: `${1 + depth * 1.6}rem` }}
       className={cn(
-        "grid grid-cols-[2.25rem_1fr] gap-x-4 px-4 py-5 sm:grid-cols-[3rem_1fr] sm:px-6",
+        "relative grid grid-cols-[2.25rem_1fr] gap-x-4 py-5 pr-4 sm:grid-cols-[3rem_1fr] sm:pr-6",
         !isLast && `border-b ${HAIRLINE}`,
       )}
     >
+      {isReply && (
+        <span
+          aria-hidden="true"
+          style={{ left: `${0.9 + (depth - 1) * 1.6}rem` }}
+          className="absolute inset-y-0 w-px bg-[#d2d2d7] dark:bg-[#38383a]"
+        />
+      )}
+
       <div className="flex flex-col items-start gap-2.5">
         <span className={cn("text-[10px] tracking-[0.08em]", MUTED)}>
-          {String(index).padStart(2, "0")}
+          {isReply ? "" : String(index).padStart(2, "0")}
         </span>
         <span
           className={cn(
@@ -121,6 +160,12 @@ function RecordRow({
             {post.time}
           </span>
         </div>
+
+        {isReply && (
+          <p className={cn("mt-1 text-[10px] tracking-[0.08em]", MUTED)}>
+            replying to @{post.replyTo}
+          </p>
+        )}
 
         <p className="mt-2 max-w-[62ch] text-[15px] leading-[1.6]">
           {post.text}
@@ -176,14 +221,6 @@ export function LandingPage() {
             className="hidden h-6 w-auto dark:block"
           />
         </span>
-        <span
-          className={cn(
-            "rotate-180 text-[10px] tracking-[0.08em] [writing-mode:vertical-rl]",
-            MUTED,
-          )}
-        >
-          own your interpretations
-        </span>
         <span className={cn("h-6 w-px bg-[#d2d2d7] dark:bg-[#38383a]")} />
       </aside>
 
@@ -207,8 +244,13 @@ export function LandingPage() {
               className="hidden h-6 w-auto dark:block"
             />
           </span>
-          <span className={cn("hidden text-[11px] tracking-[0.08em] sm:block", MUTED)}>
-            hyvmind.xyz
+          <span
+            className={cn(
+              "hidden text-[11px] tracking-[0.08em] sm:block",
+              MUTED,
+            )}
+          >
+            a social graph for legal researchers
           </span>
 
           <div className="flex items-center gap-4">
@@ -228,14 +270,11 @@ export function LandingPage() {
         <main className="min-h-0 flex-1 overflow-y-auto">
           {/* Hero */}
           <section
-            className={cn(
-              "grid border-b lg:grid-cols-[1.02fr_1fr]",
-              HAIRLINE,
-            )}
+            className={cn("grid border-b lg:grid-cols-[1.02fr_1fr]", HAIRLINE)}
           >
             <div className="px-4 py-14 sm:px-6 sm:py-20">
               <h1 className="max-w-[18ch] text-[clamp(1.9rem,5vw,3.5rem)] font-medium leading-[1.04] tracking-[-0.03em]">
-                A new way to research.
+                Own your interpretations.
               </h1>
               <p
                 className={cn(
@@ -245,7 +284,7 @@ export function LandingPage() {
               >
                 Each post is a contribution to an infinite web.
                 <br />
-                It is recorded, organised and credited to your account.
+                It's recorded, organised and credited to your account.
               </p>
             </div>
 
@@ -262,12 +301,7 @@ export function LandingPage() {
           </section>
 
           {/* Sign in */}
-          <section
-            className={cn(
-              "grid border-b sm:grid-cols-2",
-              HAIRLINE,
-            )}
-          >
+          <section className={cn("grid border-b sm:grid-cols-2", HAIRLINE)}>
             <button
               type="button"
               onClick={() => login({ provider: "google" })}
@@ -325,25 +359,33 @@ export function LandingPage() {
           <section>
             <div
               className={cn(
-                "flex items-baseline justify-between border-b px-4 py-3 text-[10px] tracking-[0.08em] sm:px-6",
+                "flex items-baseline justify-end border-b px-4 py-3 text-[10px] tracking-[0.08em] sm:px-6",
                 HAIRLINE,
                 MUTED,
               )}
             >
-              <span>the record</span>
               <span className="tabular-nums">
                 {String(FEED_POSTS.length).padStart(2, "0")} entries
               </span>
             </div>
 
-            {FEED_POSTS.map((post, i) => (
-              <RecordRow
-                key={post.handle}
-                post={post}
-                index={i + 1}
-                isLast={i === FEED_POSTS.length - 1}
-              />
-            ))}
+            {FEED_POSTS.map((post, i) => {
+              let depth = 0;
+              let parent = post.replyTo;
+              while (parent) {
+                depth += 1;
+                parent = FEED_POSTS.find((p) => p.handle === parent)?.replyTo;
+              }
+              return (
+                <RecordRow
+                  key={post.handle}
+                  post={post}
+                  index={i + 1}
+                  depth={depth}
+                  isLast={i === FEED_POSTS.length - 1}
+                />
+              );
+            })}
           </section>
         </main>
 

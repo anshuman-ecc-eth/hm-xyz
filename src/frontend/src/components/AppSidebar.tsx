@@ -12,10 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Bell, Home, LogOut, Moon, Search, Sun, User } from "lucide-react";
 import { useTheme } from "next-themes";
-import {
-  useProfile,
-  useUnreadNotificationCount,
-} from "../hooks/useQueries";
+import { useProfile, useUnreadNotificationCount } from "../hooks/useQueries";
 import { getInitials } from "../utils/formatting";
 
 const NAV_ITEMS = [

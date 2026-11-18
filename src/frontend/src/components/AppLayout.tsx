@@ -49,7 +49,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </header>
 
         <div className="flex flex-1">
-          <main className="min-w-0 flex-1 border-r border-border">{children}</main>
+          <main className="min-w-0 flex-1 border-r border-border">
+            {children}
+          </main>
           <TrendingPanel />
         </div>
       </div>

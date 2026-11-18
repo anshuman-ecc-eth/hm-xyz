@@ -21,7 +21,10 @@ export function TrendingPanel() {
 
   return (
     <aside className="sticky top-0 hidden h-screen w-80 shrink-0 overflow-y-auto font-mono lg:block">
-      <form onSubmit={handleSearchSubmit} className="border-b border-border p-3">
+      <form
+        onSubmit={handleSearchSubmit}
+        className="border-b border-border p-3"
+      >
         <div className="relative">
           <Search
             className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"

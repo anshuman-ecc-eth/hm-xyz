@@ -13,9 +13,9 @@ import { useEffect, useMemo, useState } from "react";
  * wobbles on load.
  */
 
-const WIDTH = 480;
-const HEIGHT = 360;
-const PER_CLUSTER = 11;
+const WIDTH = 560;
+const HEIGHT = 400;
+const PER_CLUSTER = 8;
 
 export type GraphNode = {
   id: string;
@@ -23,6 +23,10 @@ export type GraphNode = {
   title?: string;
   hub?: boolean;
   anchor?: boolean;
+  /** "article" (default), "contributor" or "follower". */
+  kind?: "article" | "contributor" | "follower";
+  /** Small caption shown with the label, e.g. "contributor". */
+  tag?: string;
   /** Target position for anchors. */
   tx?: number;
   ty?: number;
@@ -32,7 +36,12 @@ export type GraphNode = {
   vy: number;
 };
 
-export type GraphEdge = { a: number; b: number };
+export type GraphEdge = {
+  a: number;
+  b: number;
+  dashed?: boolean;
+  rest?: number;
+};
 
 type Article = { n: string; title: string };
 type Branch = { id: string; label: string; short: string; articles: Article[] };
@@ -57,14 +66,20 @@ const HIERARCHY: { hub: string; branches: Branch[] } = {
         { n: "21", title: "Protection of life and personal liberty" },
         { n: "21A", title: "Right to education" },
         { n: "22", title: "Protection against arrest and detention" },
-        { n: "23", title: "Prohibition of traffic in human beings and forced labour" },
+        {
+          n: "23",
+          title: "Prohibition of traffic in human beings and forced labour",
+        },
         { n: "24", title: "Prohibition of child employment in factories" },
         { n: "25", title: "Freedom of conscience and religion" },
         { n: "26", title: "Freedom to manage religious affairs" },
         { n: "29", title: "Protection of interests of minorities" },
         { n: "30", title: "Rights of minorities to educational institutions" },
         { n: "32", title: "Remedies for enforcement of rights (writs)" },
-        { n: "33", title: "Power of Parliament to modify rights for the Forces" },
+        {
+          n: "33",
+          title: "Power of Parliament to modify rights for the Forces",
+        },
         { n: "35", title: "Legislation to give effect to this Part" },
       ],
     },
@@ -85,13 +100,27 @@ const HIERARCHY: { hub: string; branches: Branch[] } = {
         { n: "43A", title: "Participation of workers in management" },
         { n: "44", title: "Uniform civil code" },
         { n: "45", title: "Free and compulsory education for children" },
-        { n: "46", title: "Interests of Scheduled Castes, Tribes and weaker sections" },
+        {
+          n: "46",
+          title: "Interests of Scheduled Castes, Tribes and weaker sections",
+        },
         { n: "47", title: "Nutrition, standard of living and public health" },
         { n: "48", title: "Organisation of agriculture and animal husbandry" },
         { n: "48A", title: "Environment, forests and wildlife" },
         { n: "49", title: "Protection of monuments of national importance" },
         { n: "50", title: "Separation of judiciary from the executive" },
         { n: "51", title: "Promotion of international peace and security" },
+      ],
+    },
+    {
+      id: "part-xxi",
+      label: "Part XXI · Temporary, Transitional and Special Provisions",
+      short: "Part XXI",
+      articles: [
+        {
+          n: "371J",
+          title: "Special provision with respect to the State of Karnataka",
+        },
       ],
     },
     {
@@ -107,12 +136,19 @@ const HIERARCHY: { hub: string; branches: Branch[] } = {
         { n: "58", title: "Qualifications for election as President" },
         { n: "61", title: "Procedure for impeachment of the President" },
         { n: "63", title: "The Vice-President of India" },
-        { n: "64", title: "Vice-President as ex officio Chairman of the Council of States" },
+        {
+          n: "64",
+          title:
+            "Vice-President as ex officio Chairman of the Council of States",
+        },
         { n: "65", title: "Vice-President acting as President" },
         { n: "66", title: "Election of Vice-President" },
         { n: "67", title: "Term of office of Vice-President" },
         { n: "72", title: "Power of President to grant pardons" },
-        { n: "74", title: "Council of Ministers to aid and advise the President" },
+        {
+          n: "74",
+          title: "Council of Ministers to aid and advise the President",
+        },
         { n: "75", title: "Other provisions as to Ministers" },
         { n: "76", title: "Attorney-General for India" },
         { n: "77", title: "Conduct of business of the Government of India" },
@@ -149,7 +185,8 @@ export function buildGraph() {
 
   const cx = WIDTH / 2;
   const cy = HEIGHT / 2;
-  const ring = Math.min(WIDTH, HEIGHT) * 0.32;
+  const ring = Math.min(WIDTH, HEIGHT) * 0.3;
+  const angles = [-Math.PI / 2, -0.3, 2.85, 1.1];
 
   nodes.push({
     id: "constitution",
@@ -165,7 +202,8 @@ export function buildGraph() {
   });
 
   HIERARCHY.branches.forEach((branch, c) => {
-    const angle = (c / HIERARCHY.branches.length) * Math.PI * 2 - Math.PI / 2;
+    const angle =
+      angles[c] ?? (c / HIERARCHY.branches.length) * Math.PI * 2 - Math.PI / 2;
     const ax = cx + Math.cos(angle) * ring;
     const ay = cy + Math.sin(angle) * ring;
     const anchorIndex = nodes.length;
@@ -194,7 +232,7 @@ export function buildGraph() {
       nodes.push({
         id: `${branch.id}-${article.n}`,
         label: `Art. ${article.n}`,
-        title: `Article ${article.n} — ${article.title} (${branch.label})`,
+        title: `Article ${article.n} — ${article.title}`,
         x: ax + Math.cos(a2) * r2 * spread,
         y: ay + Math.sin(a2) * r2 * spread,
         vx: 0,
@@ -206,7 +244,10 @@ export function buildGraph() {
 
     // Mesh inside the Part only: each article links to its two nearest
     // siblings, which keeps every edge conceptually true (same Part).
-    const leaves = Array.from({ length: articles.length }, (_, i) => leafStart + i);
+    const leaves = Array.from(
+      { length: articles.length },
+      (_, i) => leafStart + i,
+    );
     const seen = new Set<string>();
     for (const i of leaves) {
       const others = leaves
@@ -222,6 +263,80 @@ export function buildGraph() {
         if (seen.has(key)) continue;
         seen.add(key);
         edges.push({ a: i, b: j });
+      }
+    }
+
+    // Part XXI carries a worked example of the knowledge hierarchy:
+    // Article 371 -> the person who curated it -> the people following them.
+    if (branch.id === "part-xxi") {
+      // The chain is pinned rather than simulated: a four-level tail on a
+      // shared canvas otherwise piles up against the frame edge.
+      const pin = (node: GraphNode, px: number, py: number) => {
+        node.tx = WIDTH * px;
+        node.ty = HEIGHT * py;
+        node.x = node.tx;
+        node.y = node.ty;
+      };
+
+      const articleNode = nodes[leafStart];
+      pin(articleNode, 0.3, 0.63);
+
+      const contributorIndex = nodes.length;
+      const contributor = {
+        id: "contrib-jehosh",
+        label: "Jehosh",
+        tag: "contributor",
+        title: "Jehosh — contributor to Article 371J",
+        kind: "contributor" as const,
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+      };
+      pin(contributor, 0.215, 0.74);
+      nodes.push(contributor);
+      edges.push({ a: leafStart, b: contributorIndex, rest: 40 });
+
+      const followerSlots: Array<[string, number, number]> = [
+        ["Sukriti", 0.095, 0.66],
+        ["Sudeep", 0.13, 0.845],
+        ["Gayatri", 0.235, 0.885],
+      ];
+      for (const [name, px, py] of followerSlots) {
+        const follower = {
+          id: `follower-${name.toLowerCase()}`,
+          label: name,
+          tag: "follower",
+          title: `${name} — follower of Jehosh`,
+          kind: "follower" as const,
+          x: 0,
+          y: 0,
+          vx: 0,
+          vy: 0,
+        };
+        pin(follower, px, py);
+        nodes.push(follower);
+        edges.push({
+          a: contributorIndex,
+          b: nodes.length - 1,
+          dashed: true,
+          rest: 34,
+        });
+      }
+
+      // The four people know each other: connect the followers pairwise too.
+      const followerIndices = nodes
+        .map((node, index) => (node.kind === "follower" ? index : -1))
+        .filter((index) => index >= 0);
+      for (let i = 0; i < followerIndices.length; i++) {
+        for (let j = i + 1; j < followerIndices.length; j++) {
+          edges.push({
+            a: followerIndices[i],
+            b: followerIndices[j],
+            dashed: true,
+            rest: 46,
+          });
+        }
       }
     }
   });
@@ -276,7 +391,7 @@ export function step(nodes: GraphNode[], edges: GraphEdge[]) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const dist = Math.hypot(dx, dy) || 0.01;
-    const force = (dist - REST) * SPRING;
+    const force = (dist - (edge.rest ?? REST)) * SPRING;
     const fx = (dx / dist) * force;
     const fy = (dy / dist) * force;
     a.vx += fx;
@@ -370,28 +485,27 @@ export function LandingGraph() {
     <svg
       data-graph="knowledge"
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      className={
-        "h-full w-full transition-opacity duration-700 ease-out motion-reduce:transition-none " +
-        (visible ? "opacity-100" : "opacity-0")
-      }
+      className={`h-full w-full transition-opacity duration-700 ease-out motion-reduce:transition-none ${visible ? "opacity-100" : "opacity-0"}`}
       role="img"
       aria-label="Constitution of India: articles grouped by Parts — Fundamental Rights, Directive Principles, and the Executive"
     >
-      {edges.map((edge, i) => {
+      {edges.map((edge) => {
         const a = nodes[edge.a];
         const b = nodes[edge.b];
         if (!a || !b) return null;
-        const touching = hovered !== null && (a.id === hovered || b.id === hovered);
+        const touching =
+          hovered !== null && (a.id === hovered || b.id === hovered);
         const dimmed = hovered !== null && !touching;
         return (
           <line
-            key={i}
+            key={`${a.id}-${b.id}`}
             x1={a.x}
             y1={a.y}
             x2={b.x}
             y2={b.y}
             stroke="currentColor"
             strokeWidth={touching ? 1.5 : 1}
+            strokeDasharray={edge.dashed ? "3 3" : undefined}
             strokeOpacity={dimmed ? 0.12 : touching ? 1 : 0.5}
             className={
               touching
@@ -419,8 +533,6 @@ export function LandingGraph() {
               onMouseEnter={() => setHovered(node.id)}
               onMouseLeave={() => setHovered(null)}
             >
-              <title>{node.title ?? node.label}</title>
-
               {/* Generous invisible hit area: small dots are hard to hover. */}
               <circle cx={node.x} cy={node.y} r={20} fill="transparent" />
 
@@ -430,6 +542,18 @@ export function LandingGraph() {
                   cy={node.y}
                   r={12 * grow}
                   className="fill-[#007aff] dark:fill-[#6b8fff]"
+                />
+              ) : node.kind === "contributor" || node.kind === "follower" ? (
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={(node.kind === "contributor" ? 5.5 : 4.25) * grow}
+                  strokeWidth={1.5}
+                  className={
+                    accent
+                      ? "fill-[#007aff] stroke-[#007aff] dark:fill-[#6b8fff] dark:stroke-[#6b8fff]"
+                      : "fill-transparent stroke-[#6e6e73] dark:stroke-[#a1a1a6]"
+                  }
                 />
               ) : node.anchor ? (
                 <circle
@@ -469,7 +593,8 @@ export function LandingGraph() {
           const isDim = hovered !== null && !hot(node.id);
           // Structural labels sit to the side; article labels alternate
           // above/below so neighbouring ones do not collide.
-          const flip = !isLeaf && node.x > WIDTH * 0.62;
+          const flipAt = node.hub ? 0.95 : node.anchor ? 0.86 : 0.72;
+          const flip = !isLeaf && node.x > WIDTH * flipAt;
           const offset = node.hub ? 17 : node.anchor ? 12 : 9;
           const size = node.hub ? 11 : node.anchor ? 10 : 9;
           const above = index % 2 === 0;
@@ -485,9 +610,7 @@ export function LandingGraph() {
           // so it never lands on the Part's own caption.
           if (isLeaf && node.id === hovered) {
             const parentId = neighbours.get(node.id);
-            const parent = nodes.find(
-              (n) => n.anchor && parentId?.has(n.id),
-            );
+            const parent = nodes.find((n) => n.anchor && parentId?.has(n.id));
             if (parent) {
               const dx = node.x - parent.x;
               const dy = node.y - parent.y;
@@ -509,12 +632,13 @@ export function LandingGraph() {
               strokeLinejoin="round"
               paintOrder="stroke"
               opacity={isDim ? 0.25 : 1}
-              className={
-                "pointer-events-none stroke-[#fbfbfb] font-medium transition-opacity duration-150 dark:stroke-[#0c0c0c] " +
-                (node.id === hovered || node.hub || node.anchor
-                  ? "fill-[#1d1d1f] dark:fill-white"
-                  : "fill-[#6e6e73] dark:fill-[#a1a1a6]")
-              }
+              className={`pointer-events-none stroke-[#fbfbfb] font-medium transition-opacity duration-150 dark:stroke-[#0c0c0c] ${
+                node.kind
+                  ? "fill-[#e0168e] dark:fill-[#ff7ab8]"
+                  : node.id === hovered || node.hub || node.anchor
+                    ? "fill-[#1d1d1f] dark:fill-white"
+                    : "fill-[#6e6e73] dark:fill-[#a1a1a6]"
+              }`}
             >
               {node.anchor && node.id === hovered ? node.title : node.label}
             </text>
