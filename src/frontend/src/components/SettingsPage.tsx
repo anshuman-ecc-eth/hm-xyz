@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import {
   useConfirmAppLink,
   useMyAppLink,
+  useReconcileAppLink,
   useResolveAppLinkCode,
   useUnlinkAppAccount,
 } from "../hooks/useQueries";
@@ -59,6 +60,7 @@ export function SettingsPage() {
   const resolve = useResolveAppLinkCode();
   const confirm = useConfirmAppLink();
   const unlink = useUnlinkAppAccount();
+  const reconcile = useReconcileAppLink();
 
   const linked = link.data ?? null;
 
@@ -74,7 +76,20 @@ export function SettingsPage() {
             expiresAt: res.ok.expiresAt,
           });
         } else {
-          toast.error(res.err);
+          // The app returns null for unknown, expired and already-used codes.
+          // Ask it whether we are in fact linked before reporting an error.
+          reconcile.mutate(undefined, {
+            onSuccess: (r) => {
+              if (r.__kind__ === "ok" && r.ok) {
+                setPreview(null);
+                setCode("");
+                toast.success("Accounts are already linked");
+              } else {
+                toast.error(res.err);
+              }
+            },
+            onError: () => toast.error(res.err),
+          });
         }
       },
       onError: () => toast.error("Could not reach hyvmind.app"),
@@ -113,7 +128,7 @@ export function SettingsPage() {
     preview != null
       ? Math.max(
           0,
-          Math.round(Number(preview.expiresAt) / 1e6 / 60_000 - Date.now()),
+          Math.round((Number(preview.expiresAt) / 1e6 - Date.now()) / 60_000),
         )
       : 0;
 
@@ -241,7 +256,7 @@ export function SettingsPage() {
               <p className="pt-1 text-[10px] text-muted-foreground">
                 {minutesLeft > 0
                   ? `Code expires in about ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"}.`
-                  : "This code has expired."}
+                  : "This code may have expired. The app decides, so trying is harmless."}
               </p>
             </div>
             <div className="flex justify-end gap-2 border-t px-3 py-2">
@@ -258,7 +273,7 @@ export function SettingsPage() {
                 size="sm"
                 className="h-7 gap-1.5 rounded-none px-2 text-[10px]"
                 onClick={handleConfirm}
-                disabled={confirm.isPending || minutesLeft <= 0}
+                disabled={confirm.isPending}
               >
                 {confirm.isPending && (
                   <Loader2 className="h-3 w-3 animate-spin" />

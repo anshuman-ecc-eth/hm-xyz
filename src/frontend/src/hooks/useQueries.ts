@@ -1102,3 +1102,17 @@ export function useUnlinkAppAccount() {
     },
   });
 }
+
+export function useReconcileAppLink() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.reconcileAppLink();
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["appLink"] });
+    },
+  });
+}
