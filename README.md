@@ -197,7 +197,7 @@ to read, cite and write graphs from xyz.
    it is one-way and plugin-shaped. It is not broken, though — `storeNotesData`
    writes via the effective user and `getNotesData` is read by the signed-in user
    (`EditorView.tsx:377`), so the Obsidian import slot works end to end. Do not
-   "fix" it into the link; add separate, allowlist-gated methods instead.
+   "fix" it into the link: the link carries no data channel at all.
 7. **Hyvmind's chat is not a real boundary either** — `getMessages` auto-adds any
    caller to channel membership. Do not model access control on it.
 8. **There is no public `createLawToken`.** Law tokens exist only as ancestors
@@ -314,20 +314,26 @@ Frontend:
   `P_xyz → P_hv`), one xyz account per app account, and either side can revoke.
   Do not extend `pluginBindings`.
 - Hyvmind: allowlist xyz's backend canister principal for `confirmLink`,
-  `resolveLinkCode`, `revokeLinkAsXyz`, `getLinkForXyz`, `getNotesDataFor`,
-  `storeNotesDataFor` and `isAppPrincipalLinked`. Do not use
-  `AccessControl.hasPermission` for canister callers — it traps on unregistered
-  principals, and `inspect_message` does not run for inter-canister calls.
+  `resolveLinkCode`, `revokeLinkAsXyz`, `getLinkForXyz`, `getLinkedXyzPrincipal`
+  and `isAppPrincipalLinked`. Do not use `AccessControl.hasPermission` for
+  canister callers — it traps on unregistered principals, and `inspect_message`
+  does not run for inter-canister calls.
 - Hyvmind: codes are 16 lowercase hex, 10-minute TTL, single use; `confirmLink` is
   idempotent on `(code, xyzPrincipal)` and is the only consumer. `resolveLinkCode`
   exists so xyz can show "Link this account?" before binding.
-- Hyvmind: leave `getNotesData` alone. Add `getNotesDataFor` / `storeNotesDataFor`
-  as a **single-use staging slot**: the linked user's Notes page imports and
-  clears it.
+- Hyvmind: the link carries **no data channel**. `getNotesData` and
+  `storeNotesData` are left exactly as they are; there are no `.for` variants and
+  there never will be. The only path between the two apps is the write channel,
+  and only from Phase 3.
 - xyz: `/settings` with a Linked accounts section — code entry, confirmation card,
-  linked state, unlink.
-- xyz: store `P_hv` server-side (`P_xyz → P_hv` plus a display snapshot), never in
-  the browser, and call `getLinkForXyz` before any attributed action.
+  linked state, unlink. Copy should promise attribution only, not sync: before
+  Phase 3 a link buys attribution readiness and nothing else.
+- xyz: store `P_hv` server-side in **both directions** (`P_xyz → P_hv` and
+  `P_hv → P_xyz`), written and deleted in the same update, never in the browser.
+  The reverse index is what lets us attest path creators. Reconcile with
+  `getLinkForXyz` when the app still has the link and `getLinkedXyzPrincipal`
+  when our reverse index is stale or missing; an attestation miss is never shown
+  as "they haven't linked".
 - Trust boundary: the app checks that path creators are **linked**, that the
   attestation covers them, and that asserted principals resolve to linked
   accounts. It never evaluates follows. A compromised xyz can skip the mutual
