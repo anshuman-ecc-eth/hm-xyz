@@ -299,18 +299,21 @@ export function LandingPage() {
           {/* Hero */}
           <section className={cn("grid border-b lg:grid-cols-2", HAIRLINE)}>
             <div className="px-4 py-14 sm:px-6 sm:py-20">
-              <h1 className="max-w-[18ch] text-[clamp(1.7rem,4.3vw,3rem)] font-medium leading-[1.04] tracking-[-0.03em]">
+              <h1 className="max-w-[18ch] text-[clamp(1.5rem,3.5vw,2.5rem)] font-medium leading-[1.04] tracking-[-0.03em]">
                 A Social Graph for Legal Researchers.
               </h1>
-              <p
+              <div
                 className={cn(
-                  "mt-6 max-w-[64ch] text-[14px] leading-[1.7]",
+                  "mt-6 max-w-[64ch] text-[16px] leading-[1.65]",
                   MUTED,
                 )}
               >
-                Each post is a token in an expanding artifact — recorded,
-                organised and credited to your account.
-              </p>
+                <p>With Hyvmind, you own your interpretations.</p>
+                <p className="mt-6">
+                  Each post is a token in an expanding artifact — recorded,
+                  organised and credited to your account.
+                </p>
+              </div>
             </div>
 
             <div

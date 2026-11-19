@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * A small force-directed knowledge graph for the landing hero.
@@ -17,6 +17,11 @@ const WIDTH = 560;
 const HEIGHT = 400;
 const PER_CLUSTER = 8;
 
+// Node labels are specified in rendered CSS pixels, so they can be matched to
+// the 12px @handle in the feed. The viewBox letterboxes to fit its box, so the
+// drawn size is LABEL_PX / scale user units.
+const LABEL_PX = 12;
+
 export type GraphNode = {
   id: string;
   label?: string;
@@ -27,6 +32,10 @@ export type GraphNode = {
   kind?: "article" | "contributor" | "follower";
   /** Small caption shown with the label, e.g. "contributor". */
   tag?: string;
+  /** Put the label under the dot instead of over it. */
+  labelBelow?: boolean;
+  /** Put the label beside the dot instead of above or below it. */
+  labelSide?: "left" | "right";
   /** Target position for anchors. */
   tx?: number;
   ty?: number;
@@ -297,18 +306,28 @@ export function buildGraph() {
       nodes.push(contributor);
       edges.push({ a: leafStart, b: contributorIndex, rest: 40 });
 
-      const followerSlots: Array<[string, number, number]> = [
-        ["Sukriti", 0.095, 0.66],
-        ["Sudeep", 0.13, 0.845],
-        ["Gayatri", 0.235, 0.885],
+      const followerSlots: Array<{
+        name: string;
+        px: number;
+        py: number;
+        /** Gayatri sits lowest; her label reads better under the dot. */
+        labelBelow?: boolean;
+        /** Sudeep is nearest the left edge, so his name goes outside. */
+        labelSide?: "left" | "right";
+      }> = [
+        { name: "Sukriti", px: 0.095, py: 0.66 },
+        { name: "Sudeep", px: 0.13, py: 0.845, labelSide: "left" },
+        { name: "Gayatri", px: 0.235, py: 0.885, labelBelow: true },
       ];
-      for (const [name, px, py] of followerSlots) {
+      for (const { name, px, py, labelBelow, labelSide } of followerSlots) {
         const follower = {
           id: `follower-${name.toLowerCase()}`,
           label: name,
           tag: "follower",
           title: `${name} — follower of Jehosh`,
           kind: "follower" as const,
+          labelBelow,
+          labelSide,
           x: 0,
           y: 0,
           vx: 0,
@@ -441,6 +460,28 @@ export function LandingGraph() {
   const [visible, setVisible] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
 
+  // Measure the letterbox scale: with preserveAspectRatio="xMidYMid meet" the
+  // drawing is scaled by min(w / WIDTH, h / HEIGHT). The panel is usually
+  // height-bound, which is why the labels used to render far below their
+  // nominal size.
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      if (width > 0 && height > 0) {
+        setScale(Math.min(width / WIDTH, height / HEIGHT));
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const neighbours = useMemo(() => {
     const map = new Map<string, Set<string>>();
     for (const { a, b } of edges) {
@@ -459,13 +500,11 @@ export function LandingGraph() {
     hovered !== null &&
     (id === hovered || (neighbours.get(hovered)?.has(id) ?? false));
 
-  // Which labels are on screen: the structural ones always, an article's own
-  // label plus its direct neighbours only while that article is hovered.
+  // Labels are hover-only: the graph reads as colour and structure at rest, and
+  // names itself only under the cursor. A hovered leaf also brings up its
+  // direct neighbours, so a cluster introduces itself.
   const labelled = useMemo(() => {
     const set = new Set<string>();
-    for (const node of nodes) {
-      if (node.hub || node.anchor) set.add(node.id);
-    }
     if (hovered) {
       const node = nodes.find((n) => n.id === hovered);
       set.add(hovered);
@@ -483,6 +522,7 @@ export function LandingGraph() {
 
   return (
     <svg
+      ref={svgRef}
       data-graph="knowledge"
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       className={`h-full w-full transition-opacity duration-700 ease-out motion-reduce:transition-none ${visible ? "opacity-100" : "opacity-0"}`}
@@ -534,20 +574,20 @@ export function LandingGraph() {
               onMouseLeave={() => setHovered(null)}
             >
               {/* Generous invisible hit area: small dots are hard to hover. */}
-              <circle cx={node.x} cy={node.y} r={20} fill="transparent" />
+              <circle cx={node.x} cy={node.y} r={22} fill="transparent" />
 
               {node.hub ? (
                 <circle
                   cx={node.x}
                   cy={node.y}
-                  r={12 * grow}
+                  r={14 * grow}
                   className="fill-[#007aff] dark:fill-[#6b8fff]"
                 />
               ) : node.kind === "contributor" || node.kind === "follower" ? (
                 <circle
                   cx={node.x}
                   cy={node.y}
-                  r={(node.kind === "contributor" ? 5.5 : 4.25) * grow}
+                  r={(node.kind === "contributor" ? 6.5 : 5) * grow}
                   strokeWidth={1.5}
                   className={
                     accent
@@ -559,7 +599,7 @@ export function LandingGraph() {
                 <circle
                   cx={node.x}
                   cy={node.y}
-                  r={7.5 * grow}
+                  r={9 * grow}
                   className={
                     accent
                       ? "fill-[#007aff] dark:fill-[#6b8fff]"
@@ -571,7 +611,7 @@ export function LandingGraph() {
                 <circle
                   cx={node.x}
                   cy={node.y}
-                  r={5.5 * grow}
+                  r={6.75 * grow}
                   className={
                     accent
                       ? "fill-[#007aff] dark:fill-[#6b8fff]"
@@ -591,32 +631,70 @@ export function LandingGraph() {
 
           const isLeaf = !node.hub && !node.anchor;
           const isDim = hovered !== null && !hot(node.id);
-          // Structural labels sit to the side; article labels alternate
-          // above/below so neighbouring ones do not collide.
-          const flipAt = node.hub ? 0.95 : node.anchor ? 0.86 : 0.72;
-          const flip = !isLeaf && node.x > WIDTH * flipAt;
-          const offset = node.hub ? 17 : node.anchor ? 12 : 9;
-          const size = node.hub ? 11 : node.anchor ? 10 : 9;
-          const above = index % 2 === 0;
-          let x = isLeaf ? node.x : node.x + (flip ? -offset : offset);
-          let y = isLeaf ? node.y + (above ? -10 : 16) : node.y + 3.5;
-          let anchor: "middle" | "start" | "end" = isLeaf
-            ? "middle"
-            : flip
+          // One size for every label, expressed in rendered pixels; `k` keeps
+          // the clearances tracking the text rather than the zoom level.
+          const size = LABEL_PX / scale;
+          const k = size / 10;
+          const charWidth = size * 0.6; // Geist Mono advance, plus tracking
+
+          const expanded = node.anchor && node.id === hovered;
+          const text =
+            (expanded ? (node.title ?? node.label) : node.label) ?? "";
+
+          // Structural labels sit beside the dot, on whichever side has room
+          // for the caption; article labels alternate above/below so
+          // neighbours clear each other.
+          const offset = (node.hub ? 17 : node.anchor ? 12 : 9) * k;
+          const slack = 10;
+          const roomRight = WIDTH - slack - (node.x + offset);
+          const roomLeft = node.x - offset - slack;
+          const flip =
+            !isLeaf &&
+            (expanded
+              ? roomLeft > roomRight
+              : node.x > WIDTH * (node.hub ? 0.95 : 0.86));
+          const room = flip ? roomLeft : roomRight;
+          const shown =
+            !isLeaf && text.length * charWidth > room
+              ? `${text.slice(0, Math.max(1, Math.floor(room / charWidth) - 1))}…`
+              : text;
+
+          const side = node.labelSide;
+          const above = node.labelBelow ? false : index % 2 === 0;
+          let x =
+            side === "left"
+              ? node.x - offset
+              : side === "right"
+                ? node.x + offset
+                : isLeaf
+                  ? node.x
+                  : node.x + (flip ? -offset : offset);
+          let y =
+            isLeaf && side === undefined
+              ? node.y + (above ? -10 : 16) * k
+              : node.y + 3.5 * k;
+          let anchor: "middle" | "start" | "end" =
+            side === "left"
               ? "end"
-              : "start";
+              : side === "right"
+                ? "start"
+                : isLeaf
+                  ? "middle"
+                  : flip
+                    ? "end"
+                    : "start";
 
           // A hovered article pushes its label radially away from its Part,
           // so it never lands on the Part's own caption.
-          if (isLeaf && node.id === hovered) {
+          if (isLeaf && side === undefined && node.id === hovered) {
             const parentId = neighbours.get(node.id);
             const parent = nodes.find((n) => n.anchor && parentId?.has(n.id));
             if (parent) {
               const dx = node.x - parent.x;
               const dy = node.y - parent.y;
               const len = Math.hypot(dx, dy) || 1;
-              x = node.x + (dx / len) * 18;
-              y = node.y + (dy / len) * 18 + 3;
+              x = node.x + (dx / len) * 18 * k;
+              y = node.y + (dy / len) * 18 * k + 3 * k;
               anchor = dx >= 0 ? "start" : "end";
             }
           }
@@ -628,11 +706,11 @@ export function LandingGraph() {
               y={y}
               textAnchor={anchor}
               fontSize={size}
-              strokeWidth={3.5}
+              strokeWidth={size * 0.33}
               strokeLinejoin="round"
               paintOrder="stroke"
               opacity={isDim ? 0.25 : 1}
-              className={`pointer-events-none stroke-[#fbfbfb] font-medium transition-opacity duration-150 dark:stroke-[#0c0c0c] ${
+              className={`pointer-events-none stroke-[#fbfbfb] transition-opacity duration-150 dark:stroke-[#0c0c0c] ${
                 node.kind
                   ? "fill-[#e0168e] dark:fill-[#ff7ab8]"
                   : node.id === hovered || node.hub || node.anchor
@@ -640,7 +718,7 @@ export function LandingGraph() {
                     : "fill-[#6e6e73] dark:fill-[#a1a1a6]"
               }`}
             >
-              {node.anchor && node.id === hovered ? node.title : node.label}
+              {shown}
             </text>
           );
         })}
