@@ -9,6 +9,11 @@ export interface None {
 export type Option<T> = Some<T> | None;
 import type { ExternalBlob } from "@caffeineai/object-storage";
 export type { ExternalBlob } from "@caffeineai/object-storage";
+export interface AppLinkPreview {
+    expiresAt: Time;
+    appPrincipal: Principal;
+    displayName?: string;
+}
 export type Error_ = {
     __kind__: "FrontendOriginsNotConfigured";
     FrontendOriginsNotConfigured: null;
@@ -77,6 +82,18 @@ export interface GraphRefInput {
     nodeName: string;
     nodeType: string;
     graphName: string;
+}
+export type LinkResult = {
+    __kind__: "ok";
+    ok: LinkState;
+} | {
+    __kind__: "err";
+    err: string;
+};
+export interface LinkState {
+    linkedAt: Time;
+    appPrincipal: Principal;
+    displayName?: string;
 }
 export interface Notification {
     id: bigint;
@@ -211,6 +228,7 @@ export interface backendInterface {
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     blockUser(user: Principal): Promise<void>;
     checkUsernameAvailability(username: string): Promise<boolean>;
+    confirmAppLink(code: string): Promise<LinkResult>;
     createGraphPost(ref: GraphRefInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createPost(text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createReply(parentPostId: bigint, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
@@ -218,11 +236,13 @@ export interface backendInterface {
     dislikePost(postId: bigint): Promise<void>;
     editPost(postId: bigint, text: string): Promise<PostResponse>;
     followUser(user: Principal): Promise<void>;
+    getAppBackend(): Promise<string>;
     getCallerUserRole(): Promise<UserRole>;
     getFollowers(username: string, offset: bigint, limit: bigint): Promise<PaginatedFollows>;
     getFollowing(username: string, offset: bigint, limit: bigint): Promise<PaginatedFollows>;
     getGlobalFeed(cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
     getHomeFeed(cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
+    getMyAppLink(): Promise<LinkState | null>;
     getNotifications(cursor: bigint | null, limit: bigint): Promise<PaginatedNotifications>;
     getPost(postId: bigint): Promise<PostResponse | null>;
     getPostsByGraphNode(graphId: string, nodeId: string, cursor: bigint | null, limit: bigint): Promise<PaginatedGraphPosts>;
@@ -242,7 +262,21 @@ export interface backendInterface {
     markNotificationRead(notifId: bigint): Promise<void>;
     muteUser(user: Principal): Promise<void>;
     quotePost(postId: bigint, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
+    reconcileAppLink(): Promise<{
+        __kind__: "ok";
+        ok: LinkState | null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     repostPost(postId: bigint): Promise<PostResponse>;
+    resolveAppLinkCode(code: string): Promise<{
+        __kind__: "ok";
+        ok: AppLinkPreview;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     searchPosts(searchText: string, cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
     searchUsers(searchText: string, limit: bigint): Promise<Array<UserProfileResponse>>;
     setProfile(username: string, displayName: string, bio: string): Promise<void>;
@@ -251,6 +285,13 @@ export interface backendInterface {
     undoRepost(postId: bigint): Promise<void>;
     unfollowUser(user: Principal): Promise<void>;
     unlikePost(postId: bigint): Promise<void>;
+    unlinkAppAccount(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     unmuteUser(user: Principal): Promise<void>;
     updateHeaderImage(imageHash: ExternalBlob | null): Promise<void>;
     updateProfilePicture(pictureHash: ExternalBlob | null): Promise<void>;

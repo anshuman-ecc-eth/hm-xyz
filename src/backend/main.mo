@@ -101,6 +101,25 @@ actor {
     contributionCount : Nat;          // top-level tokens only
   };
 
+  // ── Principal link ──────────────────────────────────────────────────────────
+  // One .xyz account per .app account. The pair is stored in both directions:
+  // linkByXyz for acting on a user's behalf, appToXyz for attesting path
+  // creators. Neither is ever client-writable.
+
+  type AppLinkPreview = {
+    appPrincipal : Principal;
+    displayName : ?Text;
+    expiresAt : Time.Time;
+  };
+
+  type LinkState = {
+    appPrincipal : Principal;
+    displayName : ?Text;
+    linkedAt : Time.Time;
+  };
+
+  type LinkResult = { #ok : LinkState; #err : Text };
+
   type PaginatedPosts = {
     posts : [PostResponse];
     nextCursor : ?Nat;
@@ -191,6 +210,12 @@ actor {
   let graphNodePosts : Map.Map<Text, Map.Map<Text, Map.Map<Nat, Bool>>>;
   // Votes are weight only; deletion is decided from these counts.
   let postDislikes : Map.Map<Nat, Map.Map<Principal, Bool>>;
+
+  // ── Principal link ──────────────────────────────────────────────────────────
+  let linkByXyz : Map.Map<Principal, LinkState>;   // P_xyz -> linked .app account
+  let appToXyz : Map.Map<Principal, Principal>;    // P_hv  -> P_xyz (attestation)
+
+  transient let linkInFlight = Map.empty<Principal, Bool>();
 
   transient let maxPostLength : Nat = 280;
   transient let editDeleteWindowNanos : Int = 900_000_000_000;
@@ -619,6 +644,44 @@ actor {
     if (isGraphPost(post.id) and post.author == voter) {
       Runtime.trap("Cannot vote on your own contribution");
     };
+  };
+
+  // ── Hyvmind app link client ─────────────────────────────────────────────────
+  // The app canister id is a compile-time constant: it is stable per Caffeine
+  // project and any change is a redeploy on our side, so no admin surface.
+
+  transient let appBackendText : Text = "4p5ty-yyaaa-aaaam-qfana-cai";
+
+  type AppLinkApi = actor {
+    resolveLinkCode : (Text) -> async ?{
+      appPrincipal : Principal;
+      displayName : ?Text;
+      expiresAt : Time.Time;
+    };
+    confirmLink : (Text, Principal) -> async { #ok : Principal; #err : Text };
+    revokeLinkAsXyz : (Principal) -> async { #ok; #err : Text };
+    getLinkForXyz : (Principal) -> async ?Principal;
+  };
+
+  func appLink() : AppLinkApi = actor (appBackendText);
+
+  // Bounded wait: an unresponsive callee must not block our upgrades.
+  // `with timeout` takes seconds as Nat32.
+  transient let linkCallTimeout : Nat32 = 30;
+
+  func normalizeLinkCode(code : Text) : Text {
+    code.replace(#text "-", "").replace(#text " ", "");
+  };
+
+  func acquireLinkLock(p : Principal) : Bool {
+    switch (linkInFlight.get(p)) {
+      case (?true) { false };
+      case (_) { linkInFlight.add(p, true); true };
+    };
+  };
+
+  func releaseLinkLock(p : Principal) {
+    linkInFlight.remove(p);
   };
 
   func addNotification(recipient : Principal, actor_ : Principal, notificationType : NotificationType) {
@@ -1699,6 +1762,161 @@ actor {
       nodeWeight = if (total < 0) { 0 } else { total };
       tokenCount = tokens;
       contributionCount = contributions;
+    };
+  };
+
+  // ── Principal link methods ──────────────────────────────────────────────────
+
+  public query func getAppBackend() : async Text {
+    appBackendText;
+  };
+
+  public query ({ caller }) func getMyAppLink() : async ?LinkState {
+    linkByXyz.get(caller);
+  };
+
+  // Step 1: resolve a code without consuming it, so the confirmation card can
+  // show which .app account is about to be linked.
+  public shared ({ caller }) func resolveAppLinkCode(
+    code : Text,
+  ) : async { #ok : AppLinkPreview; #err : Text } {
+    requireAuth(caller);
+    let app = appLink();
+    try {
+      switch (await (with timeout = linkCallTimeout) app.resolveLinkCode(normalizeLinkCode(code))) {
+        case (null) { #err("Invalid or expired code") };
+        case (?preview) { #ok(preview) };
+      };
+    } catch (_e) {
+      #err("Could not reach hyvmind.app");
+    };
+  };
+
+  // Step 2: bind. Idempotent if already linked.
+  public shared ({ caller }) func confirmAppLink(code : Text) : async LinkResult {
+    requireAuth(caller);
+    switch (linkByXyz.get(caller)) {
+      case (?existing) { return #ok(existing) };
+      case (null) {};
+    };
+    if (not acquireLinkLock(caller)) {
+      return #err("A link request is already in progress");
+    };
+    try {
+      let app = appLink();
+      let normalized = normalizeLinkCode(code);
+
+      // Best effort: the name is cosmetic, and a used code resolves to null.
+      let preview = try {
+        await (with timeout = linkCallTimeout) app.resolveLinkCode(normalized)
+      } catch (_e) { null };
+
+      let result = try {
+        await (with timeout = linkCallTimeout) app.confirmLink(normalized, caller)
+      } catch (_e) {
+        return #err("Could not reach hyvmind.app");
+      };
+
+      switch (result) {
+        case (#err(e)) { #err(e) };
+        case (#ok(appPrincipal)) {
+          // One .xyz account per .app account.
+          switch (appToXyz.get(appPrincipal)) {
+            case (?other) {
+              if (other != caller) {
+                return #err("That hyvmind.app account is already linked to another xyz account");
+              };
+            };
+            case (null) {};
+          };
+          let displayName = switch (preview) {
+            case (?pv) {
+              if (pv.appPrincipal == appPrincipal) { pv.displayName } else { null };
+            };
+            case (null) { null };
+          };
+          let state : LinkState = {
+            appPrincipal;
+            displayName;
+            linkedAt = Time.now();
+          };
+          linkByXyz.add(caller, state);
+          appToXyz.add(appPrincipal, caller);
+          #ok(state);
+        };
+      };
+    } finally {
+      releaseLinkLock(caller);
+    };
+  };
+
+  public shared ({ caller }) func unlinkAppAccount() : async { #ok; #err : Text } {
+    requireAuth(caller);
+    let state = switch (linkByXyz.get(caller)) {
+      case (null) { return #err("No linked hyvmind.app account") };
+      case (?s) { s };
+    };
+    // Ask the app to revoke. #err("Not linked") is success for the goal state,
+    // and an unreachable app does not block the local unlink.
+    try {
+      let app = appLink();
+      ignore await (with timeout = linkCallTimeout) app.revokeLinkAsXyz(caller);
+    } catch (_e) {};
+    linkByXyz.remove(caller);
+    appToXyz.remove(state.appPrincipal);
+    #ok;
+  };
+
+  // Reconciles local link state against the app, which is authoritative.
+  public shared ({ caller }) func reconcileAppLink() : async {
+    #ok : ?LinkState;
+    #err : Text;
+  } {
+    requireAuth(caller);
+    let remote = try {
+      let app = appLink();
+      await (with timeout = linkCallTimeout) app.getLinkForXyz(caller)
+    } catch (_e) {
+      return #err("Could not reach hyvmind.app");
+    };
+    switch (remote) {
+      case (null) {
+        switch (linkByXyz.get(caller)) {
+          case (?s) { appToXyz.remove(s.appPrincipal) };
+          case (null) {};
+        };
+        linkByXyz.remove(caller);
+        #ok(null);
+      };
+      case (?appPrincipal) {
+        switch (linkByXyz.get(caller)) {
+          case (?s) {
+            if (s.appPrincipal == appPrincipal) {
+              #ok(?s);
+            } else {
+              appToXyz.remove(s.appPrincipal);
+              let refreshed : LinkState = {
+                appPrincipal;
+                displayName = null;
+                linkedAt = Time.now();
+              };
+              linkByXyz.add(caller, refreshed);
+              appToXyz.add(appPrincipal, caller);
+              #ok(?refreshed);
+            };
+          };
+          case (null) {
+            let refreshed : LinkState = {
+              appPrincipal;
+              displayName = null;
+              linkedAt = Time.now();
+            };
+            linkByXyz.add(caller, refreshed);
+            appToXyz.add(appPrincipal, caller);
+            #ok(?refreshed);
+          };
+        };
+      };
     };
   };
 

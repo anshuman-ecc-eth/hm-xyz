@@ -14,6 +14,7 @@ import { NotificationsPage } from "./components/NotificationsPage";
 import { PostDetail } from "./components/PostDetail";
 import { ProfilePage } from "./components/ProfilePage";
 import { SearchPage } from "./components/SearchPage";
+import { SettingsPage } from "./components/SettingsPage";
 
 const rootRoute = createRootRoute({
   component: function RootComponent() {
@@ -72,6 +73,12 @@ const nodeRoute = createRoute({
   component: NodePage,
 });
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "settings",
+  component: SettingsPage,
+});
+
 const hashtagRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "hashtag/$tag",
@@ -106,6 +113,7 @@ const routeTree = rootRoute.addChildren([
   searchRoute,
   notificationsRoute,
   nodeRoute,
+  settingsRoute,
   hashtagRoute,
   followersRoute,
   followingRoute,

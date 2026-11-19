@@ -10,6 +10,11 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface AppLinkPreview {
+  'expiresAt' : Time,
+  'appPrincipal' : Principal,
+  'displayName' : [] | [string],
+}
 export type Error = { 'FrontendOriginsNotConfigured' : null } |
   {
     'MixedSsoSources' : {
@@ -50,6 +55,13 @@ export interface GraphRefInput {
   'nodeName' : string,
   'nodeType' : string,
   'graphName' : string,
+}
+export type LinkResult = { 'ok' : LinkState } |
+  { 'err' : string };
+export interface LinkState {
+  'linkedAt' : Time,
+  'appPrincipal' : Principal,
+  'displayName' : [] | [string],
 }
 export interface Notification {
   'id' : bigint,
@@ -184,6 +196,7 @@ export interface _SERVICE {
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'blockUser' : ActorMethod<[Principal], undefined>,
   'checkUsernameAvailability' : ActorMethod<[string], boolean>,
+  'confirmAppLink' : ActorMethod<[string], LinkResult>,
   'createGraphPost' : ActorMethod<
     [GraphRefInput, string, [] | [ExternalBlob], [] | [string]],
     PostResponse
@@ -200,11 +213,13 @@ export interface _SERVICE {
   'dislikePost' : ActorMethod<[bigint], undefined>,
   'editPost' : ActorMethod<[bigint, string], PostResponse>,
   'followUser' : ActorMethod<[Principal], undefined>,
+  'getAppBackend' : ActorMethod<[], string>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getFollowers' : ActorMethod<[string, bigint, bigint], PaginatedFollows>,
   'getFollowing' : ActorMethod<[string, bigint, bigint], PaginatedFollows>,
   'getGlobalFeed' : ActorMethod<[[] | [bigint], bigint], PaginatedPosts>,
   'getHomeFeed' : ActorMethod<[[] | [bigint], bigint], PaginatedPosts>,
+  'getMyAppLink' : ActorMethod<[], [] | [LinkState]>,
   'getNotifications' : ActorMethod<
     [[] | [bigint], bigint],
     PaginatedNotifications
@@ -242,7 +257,17 @@ export interface _SERVICE {
     [bigint, string, [] | [ExternalBlob], [] | [string]],
     PostResponse
   >,
+  'reconcileAppLink' : ActorMethod<
+    [],
+    { 'ok' : [] | [LinkState] } |
+      { 'err' : string }
+  >,
   'repostPost' : ActorMethod<[bigint], PostResponse>,
+  'resolveAppLinkCode' : ActorMethod<
+    [string],
+    { 'ok' : AppLinkPreview } |
+      { 'err' : string }
+  >,
   'searchPosts' : ActorMethod<[string, [] | [bigint], bigint], PaginatedPosts>,
   'searchUsers' : ActorMethod<[string, bigint], Array<UserProfileResponse>>,
   'setProfile' : ActorMethod<[string, string, string], undefined>,
@@ -251,6 +276,7 @@ export interface _SERVICE {
   'undoRepost' : ActorMethod<[bigint], undefined>,
   'unfollowUser' : ActorMethod<[Principal], undefined>,
   'unlikePost' : ActorMethod<[bigint], undefined>,
+  'unlinkAppAccount' : ActorMethod<[], { 'ok' : null } | { 'err' : string }>,
   'unmuteUser' : ActorMethod<[Principal], undefined>,
   'updateHeaderImage' : ActorMethod<[[] | [ExternalBlob]], undefined>,
   'updateProfilePicture' : ActorMethod<[[] | [ExternalBlob]], undefined>,

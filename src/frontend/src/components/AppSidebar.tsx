@@ -10,7 +10,16 @@ import { cn } from "@/lib/utils";
 import { useInternetIdentity } from "@caffeineai/core-infrastructure";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Bell, Home, LogOut, Moon, Search, Sun, User } from "lucide-react";
+import {
+  Bell,
+  Home,
+  LogOut,
+  Moon,
+  Search,
+  Settings,
+  Sun,
+  User,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { useProfile, useUnreadNotificationCount } from "../hooks/useQueries";
 import { getInitials } from "../utils/formatting";
@@ -19,6 +28,7 @@ const NAV_ITEMS = [
   { label: "Home", icon: Home, to: "/" },
   { label: "Search", icon: Search, to: "/search" },
   { label: "Notifications", icon: Bell, to: "/notifications" },
+  { label: "Settings", icon: Settings, to: "/settings" },
 ] as const;
 
 function isNavActive(itemTo: string, currentPath: string): boolean {

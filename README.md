@@ -348,9 +348,16 @@ Frontend:
 - xyz: store `P_hv` server-side in **both directions** (`P_xyz → P_hv` and
   `P_hv → P_xyz`), written and deleted in the same update, never in the browser.
   The reverse index is what lets us attest path creators. Reconcile with
-  `getLinkForXyz` when the app still has the link and `getLinkedXyzPrincipal`
-  when our reverse index is stale or missing; an attestation miss is never shown
-  as "they haven't linked".
+  `getLinkForXyz` when the app still has the link; an attestation miss is never
+  shown as "they haven't linked".
+- xyz: the app canister id is a **compile-time constant** in the backend, not a
+  stable field. It is stable per Caffeine project, and changing it is a redeploy
+  on our side, so there is no admin surface for it. `getAppBackend()` exposes it
+  for debugging.
+- xyz: every cross-canister call uses a **bounded wait** (`with timeout = 30`)
+  and `try`/`catch`, so an unresponsive app cannot block our upgrades.
+  `confirmAppLink` holds a per-caller in-flight lock across its two awaits; the
+  local write happens only after the app returns `#ok`.
 - Trust boundary: the app checks that path creators are **linked**, that the
   attestation covers them, and that asserted principals resolve to linked
   accounts. It never evaluates follows. A compromised xyz can skip the mutual

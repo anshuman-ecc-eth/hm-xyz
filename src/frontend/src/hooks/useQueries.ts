@@ -1049,3 +1049,56 @@ export function usePostsByGraphNode(graphId: string, nodeId: string) {
     refetchInterval: 15_000,
   });
 }
+
+// ── App principal link ──────────────────────────────────────────────────────
+
+export function useMyAppLink() {
+  const { actor, isFetching } = useActor(createActor);
+
+  return useQuery({
+    queryKey: ["appLink"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.getMyAppLink();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useResolveAppLinkCode() {
+  const { actor } = useActor(createActor);
+  return useMutation({
+    mutationFn: async (code: string) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.resolveAppLinkCode(code);
+    },
+  });
+}
+
+export function useConfirmAppLink() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (code: string) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.confirmAppLink(code);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appLink"] });
+    },
+  });
+}
+
+export function useUnlinkAppAccount() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.unlinkAppAccount();
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["appLink"] });
+    },
+  });
+}

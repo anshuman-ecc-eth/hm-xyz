@@ -46,6 +46,13 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const Time = IDL.Int;
+export const LinkState = IDL.Record({
+  'linkedAt' : Time,
+  'appPrincipal' : IDL.Principal,
+  'displayName' : IDL.Opt(IDL.Text),
+});
+export const LinkResult = IDL.Variant({ 'ok' : LinkState, 'err' : IDL.Text });
 export const GraphRefInput = IDL.Record({
   'nodeId' : IDL.Text,
   'path' : IDL.Text,
@@ -61,7 +68,6 @@ export const PostType = IDL.Variant({
   'original' : IDL.Null,
   'reply' : IDL.Nat,
 });
-export const Time = IDL.Int;
 export const GraphRef = IDL.Record({
   'hiddenAt' : IDL.Opt(Time),
   'nodeId' : IDL.Text,
@@ -171,6 +177,11 @@ export const TrendingHashtag = IDL.Record({
   'tag' : IDL.Text,
   'count' : IDL.Nat,
 });
+export const AppLinkPreview = IDL.Record({
+  'expiresAt' : Time,
+  'appPrincipal' : IDL.Principal,
+  'displayName' : IDL.Opt(IDL.Text),
+});
 
 export const idlService = IDL.Service({
   '_immutableObjectStorageBlobsAreLive' : IDL.Func(
@@ -205,6 +216,7 @@ export const idlService = IDL.Service({
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'blockUser' : IDL.Func([IDL.Principal], [], []),
   'checkUsernameAvailability' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
+  'confirmAppLink' : IDL.Func([IDL.Text], [LinkResult], []),
   'createGraphPost' : IDL.Func(
       [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
       [PostResponse],
@@ -224,6 +236,7 @@ export const idlService = IDL.Service({
   'dislikePost' : IDL.Func([IDL.Nat], [], []),
   'editPost' : IDL.Func([IDL.Nat, IDL.Text], [PostResponse], []),
   'followUser' : IDL.Func([IDL.Principal], [], []),
+  'getAppBackend' : IDL.Func([], [IDL.Text], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getFollowers' : IDL.Func(
       [IDL.Text, IDL.Nat, IDL.Nat],
@@ -245,6 +258,7 @@ export const idlService = IDL.Service({
       [PaginatedPosts],
       ['query'],
     ),
+  'getMyAppLink' : IDL.Func([], [IDL.Opt(LinkState)], ['query']),
   'getNotifications' : IDL.Func(
       [IDL.Opt(IDL.Nat), IDL.Nat],
       [PaginatedNotifications],
@@ -308,7 +322,17 @@ export const idlService = IDL.Service({
       [PostResponse],
       [],
     ),
+  'reconcileAppLink' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Opt(LinkState), 'err' : IDL.Text })],
+      [],
+    ),
   'repostPost' : IDL.Func([IDL.Nat], [PostResponse], []),
+  'resolveAppLinkCode' : IDL.Func(
+      [IDL.Text],
+      [IDL.Variant({ 'ok' : AppLinkPreview, 'err' : IDL.Text })],
+      [],
+    ),
   'searchPosts' : IDL.Func(
       [IDL.Text, IDL.Opt(IDL.Nat), IDL.Nat],
       [PaginatedPosts],
@@ -325,6 +349,11 @@ export const idlService = IDL.Service({
   'undoRepost' : IDL.Func([IDL.Nat], [], []),
   'unfollowUser' : IDL.Func([IDL.Principal], [], []),
   'unlikePost' : IDL.Func([IDL.Nat], [], []),
+  'unlinkAppAccount' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'unmuteUser' : IDL.Func([IDL.Principal], [], []),
   'updateHeaderImage' : IDL.Func([IDL.Opt(ExternalBlob)], [], []),
   'updateProfilePicture' : IDL.Func([IDL.Opt(ExternalBlob)], [], []),
@@ -371,6 +400,13 @@ export const idlFactory = ({ IDL }) => {
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
+  const Time = IDL.Int;
+  const LinkState = IDL.Record({
+    'linkedAt' : Time,
+    'appPrincipal' : IDL.Principal,
+    'displayName' : IDL.Opt(IDL.Text),
+  });
+  const LinkResult = IDL.Variant({ 'ok' : LinkState, 'err' : IDL.Text });
   const GraphRefInput = IDL.Record({
     'nodeId' : IDL.Text,
     'path' : IDL.Text,
@@ -386,7 +422,6 @@ export const idlFactory = ({ IDL }) => {
     'original' : IDL.Null,
     'reply' : IDL.Nat,
   });
-  const Time = IDL.Int;
   const GraphRef = IDL.Record({
     'hiddenAt' : IDL.Opt(Time),
     'nodeId' : IDL.Text,
@@ -493,6 +528,11 @@ export const idlFactory = ({ IDL }) => {
     'postsCount' : IDL.Nat,
   });
   const TrendingHashtag = IDL.Record({ 'tag' : IDL.Text, 'count' : IDL.Nat });
+  const AppLinkPreview = IDL.Record({
+    'expiresAt' : Time,
+    'appPrincipal' : IDL.Principal,
+    'displayName' : IDL.Opt(IDL.Text),
+  });
   
   return IDL.Service({
     '_immutableObjectStorageBlobsAreLive' : IDL.Func(
@@ -527,6 +567,7 @@ export const idlFactory = ({ IDL }) => {
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'blockUser' : IDL.Func([IDL.Principal], [], []),
     'checkUsernameAvailability' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
+    'confirmAppLink' : IDL.Func([IDL.Text], [LinkResult], []),
     'createGraphPost' : IDL.Func(
         [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
         [PostResponse],
@@ -546,6 +587,7 @@ export const idlFactory = ({ IDL }) => {
     'dislikePost' : IDL.Func([IDL.Nat], [], []),
     'editPost' : IDL.Func([IDL.Nat, IDL.Text], [PostResponse], []),
     'followUser' : IDL.Func([IDL.Principal], [], []),
+    'getAppBackend' : IDL.Func([], [IDL.Text], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getFollowers' : IDL.Func(
         [IDL.Text, IDL.Nat, IDL.Nat],
@@ -567,6 +609,7 @@ export const idlFactory = ({ IDL }) => {
         [PaginatedPosts],
         ['query'],
       ),
+    'getMyAppLink' : IDL.Func([], [IDL.Opt(LinkState)], ['query']),
     'getNotifications' : IDL.Func(
         [IDL.Opt(IDL.Nat), IDL.Nat],
         [PaginatedNotifications],
@@ -630,7 +673,17 @@ export const idlFactory = ({ IDL }) => {
         [PostResponse],
         [],
       ),
+    'reconcileAppLink' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Opt(LinkState), 'err' : IDL.Text })],
+        [],
+      ),
     'repostPost' : IDL.Func([IDL.Nat], [PostResponse], []),
+    'resolveAppLinkCode' : IDL.Func(
+        [IDL.Text],
+        [IDL.Variant({ 'ok' : AppLinkPreview, 'err' : IDL.Text })],
+        [],
+      ),
     'searchPosts' : IDL.Func(
         [IDL.Text, IDL.Opt(IDL.Nat), IDL.Nat],
         [PaginatedPosts],
@@ -647,6 +700,11 @@ export const idlFactory = ({ IDL }) => {
     'undoRepost' : IDL.Func([IDL.Nat], [], []),
     'unfollowUser' : IDL.Func([IDL.Principal], [], []),
     'unlikePost' : IDL.Func([IDL.Nat], [], []),
+    'unlinkAppAccount' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
     'unmuteUser' : IDL.Func([IDL.Principal], [], []),
     'updateHeaderImage' : IDL.Func([IDL.Opt(ExternalBlob)], [], []),
     'updateProfilePicture' : IDL.Func([IDL.Opt(ExternalBlob)], [], []),
