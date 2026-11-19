@@ -308,10 +308,8 @@ export function LandingPage() {
                   MUTED,
                 )}
               >
-                Each post becomes a contribution to an expanding artifact.
-                <br />
-                <br />
-                It is recorded, organised and credited to your account.
+                Each post is a token in an expanding artifact — recorded,
+                organised and credited to your account.
               </p>
             </div>
 

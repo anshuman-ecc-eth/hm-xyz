@@ -1,7 +1,7 @@
 # hyvmind.xyz
 
-A social graph for legal researchers. Each post is a contribution to an expanding
-artifact — recorded, organised and credited to its author.
+A social graph for legal researchers. Each post is a token in an expanding artifact
+— recorded, organised and credited to its author.
 
 The sibling project is **Hyvmind** ([`hyvmind.app`](https://hyvmind.app),
 [repo](https://github.com/anshuman-ecc-eth/hyvmind)), a shared note-taking space
