@@ -160,6 +160,90 @@ export interface UserProfileResponse {
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
+export interface XyzCommitOk {
+  'costText' : string,
+  'cost' : bigint,
+  'path' : Array<string>,
+  'interpNodeId' : string,
+  'revision' : bigint,
+  'publishedGraphId' : string,
+}
+export type XyzCommitOutcome = { 'ok' : XyzCommitOk } |
+  { 'err' : { 'kind' : XyzErrKind, 'message' : string } } |
+  { 'conflict' : { 'message' : string } } |
+  { 'busy' : { 'message' : string } } |
+  {
+    'blocked' : {
+      'plan' : XyzPlan,
+      'pathCreators' : Array<XyzPathCreator>,
+      'message' : string,
+      'reason' : string,
+    }
+  } |
+  { 'notLinked' : { 'writerXyz' : Principal, 'message' : string } } |
+  { 'stale' : { 'plan' : XyzPlan, 'message' : string } } |
+  { 'notFound' : { 'message' : string, 'writeId' : string } } |
+  { 'alreadyPublished' : { 'interpNodeId' : string } } |
+  {
+    'insufficient' : {
+      'topUpPath' : string,
+      'plan' : XyzPlan,
+      'message' : string,
+    }
+  } |
+  { 'unknown' : { 'message' : string, 'writeId' : string } };
+export type XyzErrKind = { 'malformed' : null } |
+  { 'internal' : null };
+export interface XyzPathCreator {
+  'appPrincipal' : Principal,
+  'displayName' : [] | [string],
+  'linked' : boolean,
+}
+export interface XyzPlan {
+  'creates' : bigint,
+  'balance' : bigint,
+  'costText' : string,
+  'cost' : bigint,
+  'pathCreators' : Array<XyzPathCreator>,
+  'lines' : Array<string>,
+  'balanceText' : string,
+  'digest' : string,
+  'revision' : bigint,
+  'rootCuration' : string,
+  'publishedGraphId' : [] | [string],
+}
+export type XyzPreviewResult = {
+    'err' : { 'kind' : XyzErrKind, 'message' : string }
+  } |
+  {
+    'blocked' : {
+      'plan' : XyzPlan,
+      'pathCreators' : Array<XyzPathCreator>,
+      'message' : string,
+      'reason' : string,
+    }
+  } |
+  { 'notLinked' : { 'writerXyz' : Principal, 'message' : string } } |
+  {
+    'insufficient' : {
+      'topUpPath' : string,
+      'plan' : XyzPlan,
+      'message' : string,
+    }
+  } |
+  { 'throttled' : { 'retryAfterMs' : bigint } } |
+  { 'ready' : { 'plan' : XyzPlan, 'message' : string } };
+export interface XyzWriteDraft {
+  'title' : [] | [string],
+  'costText' : string,
+  'canPublish' : boolean,
+  'costTenths' : bigint,
+  'writeId' : string,
+  'tokenNodeId' : [] | [string],
+  'nodeType' : string,
+  'reason' : [] | [string],
+  'postId' : bigint,
+}
 export interface _ImmutableObjectStorageCreateCertificateResult {
   'method' : string,
   'blob_hash' : string,
@@ -196,6 +280,7 @@ export interface _SERVICE {
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'blockUser' : ActorMethod<[Principal], undefined>,
   'checkUsernameAvailability' : ActorMethod<[string], boolean>,
+  'commitXyzWriteForPost' : ActorMethod<[bigint, string], XyzCommitOutcome>,
   'confirmAppLink' : ActorMethod<[string], LinkResult>,
   'createGraphPost' : ActorMethod<
     [GraphRefInput, string, [] | [ExternalBlob], [] | [string]],
@@ -248,11 +333,13 @@ export interface _SERVICE {
   'getTrendingHashtags' : ActorMethod<[bigint], Array<TrendingHashtag>>,
   'getUnreadNotificationCount' : ActorMethod<[], bigint>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfileResponse]>,
+  'getXyzWriteDraft' : ActorMethod<[bigint], [] | [XyzWriteDraft]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'likePost' : ActorMethod<[bigint], undefined>,
   'markAllNotificationsRead' : ActorMethod<[], undefined>,
   'markNotificationRead' : ActorMethod<[bigint], undefined>,
   'muteUser' : ActorMethod<[Principal], undefined>,
+  'previewXyzWriteForPost' : ActorMethod<[bigint], XyzPreviewResult>,
   'quotePost' : ActorMethod<
     [bigint, string, [] | [ExternalBlob], [] | [string]],
     PostResponse
@@ -262,6 +349,7 @@ export interface _SERVICE {
     { 'ok' : [] | [LinkState] } |
       { 'err' : string }
   >,
+  'reconcileXyzWriteForPost' : ActorMethod<[bigint], XyzCommitOutcome>,
   'repostPost' : ActorMethod<[bigint], PostResponse>,
   'resolveAppLinkCode' : ActorMethod<
     [string],

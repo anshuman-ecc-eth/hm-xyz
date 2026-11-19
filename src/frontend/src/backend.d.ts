@@ -219,15 +219,160 @@ export interface UserProfileResponse {
     profilePictureHash?: ExternalBlob;
     postsCount: bigint;
 }
+export interface XyzCommitOk {
+    costText: string;
+    cost: bigint;
+    path: Array<string>;
+    interpNodeId: string;
+    revision: bigint;
+    publishedGraphId: string;
+}
+export type XyzCommitOutcome = {
+    __kind__: "ok";
+    ok: XyzCommitOk;
+} | {
+    __kind__: "err";
+    err: {
+        kind: XyzErrKind;
+        message: string;
+    };
+} | {
+    __kind__: "conflict";
+    conflict: {
+        message: string;
+    };
+} | {
+    __kind__: "busy";
+    busy: {
+        message: string;
+    };
+} | {
+    __kind__: "blocked";
+    blocked: {
+        plan: XyzPlan;
+        pathCreators: Array<XyzPathCreator>;
+        message: string;
+        reason: string;
+    };
+} | {
+    __kind__: "notLinked";
+    notLinked: {
+        writerXyz: Principal;
+        message: string;
+    };
+} | {
+    __kind__: "stale";
+    stale: {
+        plan: XyzPlan;
+        message: string;
+    };
+} | {
+    __kind__: "notFound";
+    notFound: {
+        message: string;
+        writeId: string;
+    };
+} | {
+    __kind__: "alreadyPublished";
+    alreadyPublished: {
+        interpNodeId: string;
+    };
+} | {
+    __kind__: "insufficient";
+    insufficient: {
+        topUpPath: string;
+        plan: XyzPlan;
+        message: string;
+    };
+} | {
+    __kind__: "unknown";
+    unknown: {
+        message: string;
+        writeId: string;
+    };
+};
+export interface XyzPathCreator {
+    appPrincipal: Principal;
+    displayName?: string;
+    linked: boolean;
+}
+export interface XyzPlan {
+    creates: bigint;
+    balance: bigint;
+    costText: string;
+    cost: bigint;
+    pathCreators: Array<XyzPathCreator>;
+    lines: Array<string>;
+    balanceText: string;
+    digest: string;
+    revision: bigint;
+    rootCuration: string;
+    publishedGraphId?: string;
+}
+export type XyzPreviewResult = {
+    __kind__: "err";
+    err: {
+        kind: XyzErrKind;
+        message: string;
+    };
+} | {
+    __kind__: "blocked";
+    blocked: {
+        plan: XyzPlan;
+        pathCreators: Array<XyzPathCreator>;
+        message: string;
+        reason: string;
+    };
+} | {
+    __kind__: "notLinked";
+    notLinked: {
+        writerXyz: Principal;
+        message: string;
+    };
+} | {
+    __kind__: "insufficient";
+    insufficient: {
+        topUpPath: string;
+        plan: XyzPlan;
+        message: string;
+    };
+} | {
+    __kind__: "throttled";
+    throttled: {
+        retryAfterMs: bigint;
+    };
+} | {
+    __kind__: "ready";
+    ready: {
+        plan: XyzPlan;
+        message: string;
+    };
+};
+export interface XyzWriteDraft {
+    title?: string;
+    costText: string;
+    canPublish: boolean;
+    costTenths: bigint;
+    writeId: string;
+    tokenNodeId?: string;
+    nodeType: string;
+    reason?: string;
+    postId: bigint;
+}
 export enum UserRole {
     admin = "admin",
     user = "user",
     guest = "guest"
 }
+export enum XyzErrKind {
+    malformed = "malformed",
+    internal = "internal"
+}
 export interface backendInterface {
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     blockUser(user: Principal): Promise<void>;
     checkUsernameAvailability(username: string): Promise<boolean>;
+    commitXyzWriteForPost(postId: bigint, expectedDigest: string): Promise<XyzCommitOutcome>;
     confirmAppLink(code: string): Promise<LinkResult>;
     createGraphPost(ref: GraphRefInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createPost(text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
@@ -256,11 +401,13 @@ export interface backendInterface {
     getTrendingHashtags(limit: bigint): Promise<Array<TrendingHashtag>>;
     getUnreadNotificationCount(): Promise<bigint>;
     getUserProfile(user: Principal): Promise<UserProfileResponse | null>;
+    getXyzWriteDraft(postId: bigint): Promise<XyzWriteDraft | null>;
     isCallerAdmin(): Promise<boolean>;
     likePost(postId: bigint): Promise<void>;
     markAllNotificationsRead(): Promise<void>;
     markNotificationRead(notifId: bigint): Promise<void>;
     muteUser(user: Principal): Promise<void>;
+    previewXyzWriteForPost(postId: bigint): Promise<XyzPreviewResult>;
     quotePost(postId: bigint, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     reconcileAppLink(): Promise<{
         __kind__: "ok";
@@ -269,6 +416,7 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    reconcileXyzWriteForPost(postId: bigint): Promise<XyzCommitOutcome>;
     repostPost(postId: bigint): Promise<PostResponse>;
     resolveAppLinkCode(code: string): Promise<{
         __kind__: "ok";

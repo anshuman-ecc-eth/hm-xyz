@@ -46,6 +46,61 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const XyzCommitOk = IDL.Record({
+  'costText' : IDL.Text,
+  'cost' : IDL.Int,
+  'path' : IDL.Vec(IDL.Text),
+  'interpNodeId' : IDL.Text,
+  'revision' : IDL.Nat,
+  'publishedGraphId' : IDL.Text,
+});
+export const XyzErrKind = IDL.Variant({
+  'malformed' : IDL.Null,
+  'internal' : IDL.Null,
+});
+export const XyzPathCreator = IDL.Record({
+  'appPrincipal' : IDL.Principal,
+  'displayName' : IDL.Opt(IDL.Text),
+  'linked' : IDL.Bool,
+});
+export const XyzPlan = IDL.Record({
+  'creates' : IDL.Nat,
+  'balance' : IDL.Int,
+  'costText' : IDL.Text,
+  'cost' : IDL.Int,
+  'pathCreators' : IDL.Vec(XyzPathCreator),
+  'lines' : IDL.Vec(IDL.Text),
+  'balanceText' : IDL.Text,
+  'digest' : IDL.Text,
+  'revision' : IDL.Nat,
+  'rootCuration' : IDL.Text,
+  'publishedGraphId' : IDL.Opt(IDL.Text),
+});
+export const XyzCommitOutcome = IDL.Variant({
+  'ok' : XyzCommitOk,
+  'err' : IDL.Record({ 'kind' : XyzErrKind, 'message' : IDL.Text }),
+  'conflict' : IDL.Record({ 'message' : IDL.Text }),
+  'busy' : IDL.Record({ 'message' : IDL.Text }),
+  'blocked' : IDL.Record({
+    'plan' : XyzPlan,
+    'pathCreators' : IDL.Vec(XyzPathCreator),
+    'message' : IDL.Text,
+    'reason' : IDL.Text,
+  }),
+  'notLinked' : IDL.Record({
+    'writerXyz' : IDL.Principal,
+    'message' : IDL.Text,
+  }),
+  'stale' : IDL.Record({ 'plan' : XyzPlan, 'message' : IDL.Text }),
+  'notFound' : IDL.Record({ 'message' : IDL.Text, 'writeId' : IDL.Text }),
+  'alreadyPublished' : IDL.Record({ 'interpNodeId' : IDL.Text }),
+  'insufficient' : IDL.Record({
+    'topUpPath' : IDL.Text,
+    'plan' : XyzPlan,
+    'message' : IDL.Text,
+  }),
+  'unknown' : IDL.Record({ 'message' : IDL.Text, 'writeId' : IDL.Text }),
+});
 export const Time = IDL.Int;
 export const LinkState = IDL.Record({
   'linkedAt' : Time,
@@ -177,6 +232,37 @@ export const TrendingHashtag = IDL.Record({
   'tag' : IDL.Text,
   'count' : IDL.Nat,
 });
+export const XyzWriteDraft = IDL.Record({
+  'title' : IDL.Opt(IDL.Text),
+  'costText' : IDL.Text,
+  'canPublish' : IDL.Bool,
+  'costTenths' : IDL.Nat,
+  'writeId' : IDL.Text,
+  'tokenNodeId' : IDL.Opt(IDL.Text),
+  'nodeType' : IDL.Text,
+  'reason' : IDL.Opt(IDL.Text),
+  'postId' : IDL.Nat,
+});
+export const XyzPreviewResult = IDL.Variant({
+  'err' : IDL.Record({ 'kind' : XyzErrKind, 'message' : IDL.Text }),
+  'blocked' : IDL.Record({
+    'plan' : XyzPlan,
+    'pathCreators' : IDL.Vec(XyzPathCreator),
+    'message' : IDL.Text,
+    'reason' : IDL.Text,
+  }),
+  'notLinked' : IDL.Record({
+    'writerXyz' : IDL.Principal,
+    'message' : IDL.Text,
+  }),
+  'insufficient' : IDL.Record({
+    'topUpPath' : IDL.Text,
+    'plan' : XyzPlan,
+    'message' : IDL.Text,
+  }),
+  'throttled' : IDL.Record({ 'retryAfterMs' : IDL.Nat }),
+  'ready' : IDL.Record({ 'plan' : XyzPlan, 'message' : IDL.Text }),
+});
 export const AppLinkPreview = IDL.Record({
   'expiresAt' : Time,
   'appPrincipal' : IDL.Principal,
@@ -216,6 +302,11 @@ export const idlService = IDL.Service({
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'blockUser' : IDL.Func([IDL.Principal], [], []),
   'checkUsernameAvailability' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
+  'commitXyzWriteForPost' : IDL.Func(
+      [IDL.Nat, IDL.Text],
+      [XyzCommitOutcome],
+      [],
+    ),
   'confirmAppLink' : IDL.Func([IDL.Text], [LinkResult], []),
   'createGraphPost' : IDL.Func(
       [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
@@ -312,11 +403,13 @@ export const idlService = IDL.Service({
       [IDL.Opt(UserProfileResponse)],
       ['query'],
     ),
+  'getXyzWriteDraft' : IDL.Func([IDL.Nat], [IDL.Opt(XyzWriteDraft)], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'likePost' : IDL.Func([IDL.Nat], [], []),
   'markAllNotificationsRead' : IDL.Func([], [], []),
   'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
   'muteUser' : IDL.Func([IDL.Principal], [], []),
+  'previewXyzWriteForPost' : IDL.Func([IDL.Nat], [XyzPreviewResult], []),
   'quotePost' : IDL.Func(
       [IDL.Nat, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
       [PostResponse],
@@ -327,6 +420,7 @@ export const idlService = IDL.Service({
       [IDL.Variant({ 'ok' : IDL.Opt(LinkState), 'err' : IDL.Text })],
       [],
     ),
+  'reconcileXyzWriteForPost' : IDL.Func([IDL.Nat], [XyzCommitOutcome], []),
   'repostPost' : IDL.Func([IDL.Nat], [PostResponse], []),
   'resolveAppLinkCode' : IDL.Func(
       [IDL.Text],
@@ -399,6 +493,61 @@ export const idlFactory = ({ IDL }) => {
     'admin' : IDL.Null,
     'user' : IDL.Null,
     'guest' : IDL.Null,
+  });
+  const XyzCommitOk = IDL.Record({
+    'costText' : IDL.Text,
+    'cost' : IDL.Int,
+    'path' : IDL.Vec(IDL.Text),
+    'interpNodeId' : IDL.Text,
+    'revision' : IDL.Nat,
+    'publishedGraphId' : IDL.Text,
+  });
+  const XyzErrKind = IDL.Variant({
+    'malformed' : IDL.Null,
+    'internal' : IDL.Null,
+  });
+  const XyzPathCreator = IDL.Record({
+    'appPrincipal' : IDL.Principal,
+    'displayName' : IDL.Opt(IDL.Text),
+    'linked' : IDL.Bool,
+  });
+  const XyzPlan = IDL.Record({
+    'creates' : IDL.Nat,
+    'balance' : IDL.Int,
+    'costText' : IDL.Text,
+    'cost' : IDL.Int,
+    'pathCreators' : IDL.Vec(XyzPathCreator),
+    'lines' : IDL.Vec(IDL.Text),
+    'balanceText' : IDL.Text,
+    'digest' : IDL.Text,
+    'revision' : IDL.Nat,
+    'rootCuration' : IDL.Text,
+    'publishedGraphId' : IDL.Opt(IDL.Text),
+  });
+  const XyzCommitOutcome = IDL.Variant({
+    'ok' : XyzCommitOk,
+    'err' : IDL.Record({ 'kind' : XyzErrKind, 'message' : IDL.Text }),
+    'conflict' : IDL.Record({ 'message' : IDL.Text }),
+    'busy' : IDL.Record({ 'message' : IDL.Text }),
+    'blocked' : IDL.Record({
+      'plan' : XyzPlan,
+      'pathCreators' : IDL.Vec(XyzPathCreator),
+      'message' : IDL.Text,
+      'reason' : IDL.Text,
+    }),
+    'notLinked' : IDL.Record({
+      'writerXyz' : IDL.Principal,
+      'message' : IDL.Text,
+    }),
+    'stale' : IDL.Record({ 'plan' : XyzPlan, 'message' : IDL.Text }),
+    'notFound' : IDL.Record({ 'message' : IDL.Text, 'writeId' : IDL.Text }),
+    'alreadyPublished' : IDL.Record({ 'interpNodeId' : IDL.Text }),
+    'insufficient' : IDL.Record({
+      'topUpPath' : IDL.Text,
+      'plan' : XyzPlan,
+      'message' : IDL.Text,
+    }),
+    'unknown' : IDL.Record({ 'message' : IDL.Text, 'writeId' : IDL.Text }),
   });
   const Time = IDL.Int;
   const LinkState = IDL.Record({
@@ -528,6 +677,37 @@ export const idlFactory = ({ IDL }) => {
     'postsCount' : IDL.Nat,
   });
   const TrendingHashtag = IDL.Record({ 'tag' : IDL.Text, 'count' : IDL.Nat });
+  const XyzWriteDraft = IDL.Record({
+    'title' : IDL.Opt(IDL.Text),
+    'costText' : IDL.Text,
+    'canPublish' : IDL.Bool,
+    'costTenths' : IDL.Nat,
+    'writeId' : IDL.Text,
+    'tokenNodeId' : IDL.Opt(IDL.Text),
+    'nodeType' : IDL.Text,
+    'reason' : IDL.Opt(IDL.Text),
+    'postId' : IDL.Nat,
+  });
+  const XyzPreviewResult = IDL.Variant({
+    'err' : IDL.Record({ 'kind' : XyzErrKind, 'message' : IDL.Text }),
+    'blocked' : IDL.Record({
+      'plan' : XyzPlan,
+      'pathCreators' : IDL.Vec(XyzPathCreator),
+      'message' : IDL.Text,
+      'reason' : IDL.Text,
+    }),
+    'notLinked' : IDL.Record({
+      'writerXyz' : IDL.Principal,
+      'message' : IDL.Text,
+    }),
+    'insufficient' : IDL.Record({
+      'topUpPath' : IDL.Text,
+      'plan' : XyzPlan,
+      'message' : IDL.Text,
+    }),
+    'throttled' : IDL.Record({ 'retryAfterMs' : IDL.Nat }),
+    'ready' : IDL.Record({ 'plan' : XyzPlan, 'message' : IDL.Text }),
+  });
   const AppLinkPreview = IDL.Record({
     'expiresAt' : Time,
     'appPrincipal' : IDL.Principal,
@@ -567,6 +747,11 @@ export const idlFactory = ({ IDL }) => {
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'blockUser' : IDL.Func([IDL.Principal], [], []),
     'checkUsernameAvailability' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
+    'commitXyzWriteForPost' : IDL.Func(
+        [IDL.Nat, IDL.Text],
+        [XyzCommitOutcome],
+        [],
+      ),
     'confirmAppLink' : IDL.Func([IDL.Text], [LinkResult], []),
     'createGraphPost' : IDL.Func(
         [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
@@ -663,11 +848,17 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Opt(UserProfileResponse)],
         ['query'],
       ),
+    'getXyzWriteDraft' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Opt(XyzWriteDraft)],
+        ['query'],
+      ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'likePost' : IDL.Func([IDL.Nat], [], []),
     'markAllNotificationsRead' : IDL.Func([], [], []),
     'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
     'muteUser' : IDL.Func([IDL.Principal], [], []),
+    'previewXyzWriteForPost' : IDL.Func([IDL.Nat], [XyzPreviewResult], []),
     'quotePost' : IDL.Func(
         [IDL.Nat, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
         [PostResponse],
@@ -678,6 +869,7 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Variant({ 'ok' : IDL.Opt(LinkState), 'err' : IDL.Text })],
         [],
       ),
+    'reconcileXyzWriteForPost' : IDL.Func([IDL.Nat], [XyzCommitOutcome], []),
     'repostPost' : IDL.Func([IDL.Nat], [PostResponse], []),
     'resolveAppLinkCode' : IDL.Func(
         [IDL.Text],

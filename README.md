@@ -399,6 +399,41 @@ curation, swarm or location is rejected.
 - xyz: store the returned published graph id, revision, interp node id and path
   per post, in `tokenNodeId`, and render it from the snapshot.
 
+**As built.** One migration-free step: `GraphRef.tokenNodeId` already existed, so
+Phase 3 adds no stable fields. Three things turned out differently from the sketch
+above, each verified against the deployed app:
+
+- **The payload is a pure function of `postId`.** Title, `parentLaw` and the
+  citation are derived server-side from the stored post and graph — nothing is
+  taken from the client. `#conflict` is therefore unreachable except through a bug
+  of ours, and `#stale` can only mean the graph moved under us.
+- **Two cost shapes, not one.** A cited `interpEntity` attaches under its
+  `parentLawTokenId` and cites itself: 50 + 1 = **5.1 BUZZ**. A cited `lawEntity`
+  *is* the anchor, so it cites nothing (`citations = []`, since a target on the
+  path is a `hierarchyEdge` block): **5.0 BUZZ**. `parentLaw` comes from
+  `getPublishedSourceGraph`, whose `interpretationTokens[].parentLawTokenId` is
+  flat — no tree walk. That read is a query, so a malicious replica could in
+  principle misdirect the anchor; the app still validates existence, type and
+  path consistency, and the writer pays either way.
+- **Title is derived, never stored.** First non-empty line, `@` stripped,
+  whitespace collapsed, truncated to 200, falling back to a refusal rather than
+  an unnamed node. Because the post text is immutable and the title is in the
+  digest, preview and commit cannot disagree about it.
+
+Commit is never auto-retried: a bounded-wait timeout does not cancel the callee, so
+an immediate retry could race a still-running write. A lost reply becomes
+`#unknown`, and `reconcileXyzWriteForPost` asks the app's `getXyzWrite` before the
+user retries. A transient per-post lock (not just a disabled button) is what
+prevents a double charge, because the app's idempotency is on `(writeId, digest)`
+but not concurrency-safe. That lock also makes a branch with a write in flight
+undeletable, and `markPublished` refuses to resurrect a purged post.
+
+Two facts worth carrying forward: **no production xyz write has ever been
+committed** (every graph sits at `revision: 0`, `xyzWriteCount: 0`), so the first
+one deserves a coordinated window; and `/?settings=wallet&redeem=1` redeems a
+secret code from the text game — there is no card top-up, so the `#insufficient`
+path says so instead of promising a purchase.
+
 #### Phase 4 — deep links
 
 - Hyvmind: accept `?graph=<id>&node=<id>` and focus the graph/node view.

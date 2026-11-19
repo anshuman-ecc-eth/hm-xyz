@@ -32,6 +32,7 @@ import { CitationChip } from "./CitationChip";
 import { DeletePostDialog } from "./DeletePostDialog";
 import { EditPostForm } from "./EditPostForm";
 import { PostText } from "./PostText";
+import { PublishToGraph } from "./PublishToGraph";
 
 interface PostCardProps {
   post: Post;
@@ -304,6 +305,9 @@ export function PostCard({ post }: PostCardProps) {
               )}
               {contentPost.graphRef && (
                 <CitationChip graphRef={contentPost.graphRef} />
+              )}
+              {contentPost.graphRef && isOwnPost && (
+                <PublishToGraph post={contentPost} />
               )}
               {contentMediaUrl &&
                 (contentMediaType === "video" ? (

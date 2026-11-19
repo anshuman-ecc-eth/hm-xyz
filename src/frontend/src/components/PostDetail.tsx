@@ -35,6 +35,7 @@ import { DeletePostDialog } from "./DeletePostDialog";
 import { EditPostForm } from "./EditPostForm";
 import { PostCard } from "./PostCard";
 import { PostText } from "./PostText";
+import { PublishToGraph } from "./PublishToGraph";
 
 const routeApi = getRouteApi("/post/$id");
 
@@ -233,6 +234,7 @@ export function PostDetail() {
               className="mt-3 whitespace-pre-wrap break-words text-base"
             />
             {post.graphRef && <CitationChip graphRef={post.graphRef} />}
+            {post.graphRef && isOwnPost && <PublishToGraph post={post} />}
             {mediaUrl && (
               <div className="mt-3 overflow-hidden border">
                 {post.mediaType === "video" ? (

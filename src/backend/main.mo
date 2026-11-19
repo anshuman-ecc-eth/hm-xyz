@@ -120,6 +120,122 @@ actor {
 
   type LinkResult = { #ok : LinkState; #err : Text };
 
+  // ── Hyvmind write channel (Phase 3) ─────────────────────────────────────────
+  // Mirrors the app's contract. Argument types are complete because we encode
+  // them; response types name only the fields we render, which Candid record
+  // width-subtyping allows. Variants must be exhaustive: an undeclared tag is
+  // a decode failure, not a graceful fallback.
+
+  type XyzRef = { ref : Text; nodeType : ?Text };
+
+  type XyzSourceRef = { name : Text; url : Text };
+
+  type XyzPathNode = {
+    ref : Text;
+    nodeType : Text;
+    name : Text;
+    parentRef : ?XyzRef;
+    tags : [Text];
+    attributes : [(Text, [Text])];
+    sources : [XyzSourceRef];
+  };
+
+  type XyzCitation = {
+    target : XyzRef;
+    edgeLabel : Text;
+    bidirectional : Bool;
+  };
+
+  type XyzPostInput = {
+    apiVersion : Nat;
+    title : Text;
+    content : Text;
+    parentLaw : XyzRef;
+    ancestors : [XyzPathNode];
+    citations : [XyzCitation];
+  };
+
+  type XyzPathCreator = {
+    appPrincipal : Principal;
+    displayName : ?Text;
+    linked : Bool;
+  };
+
+  type XyzPlan = {
+    rootCuration : Text;
+    publishedGraphId : ?Text;
+    revision : Nat;
+    creates : Nat;
+    cost : Int;
+    costText : Text;
+    balance : Int;
+    balanceText : Text;
+    lines : [Text];
+    pathCreators : [XyzPathCreator];
+    digest : Text;
+  };
+
+  type XyzErrKind = { #malformed; #internal };
+
+  type XyzCommitOk = {
+    publishedGraphId : Text;
+    revision : Nat;
+    cost : Int;
+    costText : Text;
+    interpNodeId : Text;
+    path : [Text];
+  };
+
+  type XyzPreviewResult = {
+    #ready : { message : Text; plan : XyzPlan };
+    #insufficient : { message : Text; plan : XyzPlan; topUpPath : Text };
+    #blocked : {
+      message : Text;
+      plan : XyzPlan;
+      pathCreators : [XyzPathCreator];
+      reason : Text;
+    };
+    #notLinked : { message : Text; writerXyz : Principal };
+    #throttled : { retryAfterMs : Nat };
+    #err : { kind : XyzErrKind; message : Text };
+  };
+
+  // Our own outcome adds tags the app does not emit. Commit is never auto-
+  // retried: a bounded-wait timeout does not cancel the callee, so an immediate
+  // retry could race a still-running write. `#unknown` sends the user to
+  // reconcile instead.
+  type XyzCommitOutcome = {
+    #ok : XyzCommitOk;
+    #insufficient : { message : Text; plan : XyzPlan; topUpPath : Text };
+    #blocked : {
+      message : Text;
+      plan : XyzPlan;
+      pathCreators : [XyzPathCreator];
+      reason : Text;
+    };
+    #notLinked : { message : Text; writerXyz : Principal };
+    #stale : { message : Text; plan : XyzPlan };
+    #conflict : { message : Text };
+    #err : { kind : XyzErrKind; message : Text };
+    #busy : { message : Text };
+    #unknown : { message : Text; writeId : Text };
+    #notFound : { message : Text; writeId : Text };
+    #alreadyPublished : { interpNodeId : Text };
+  };
+
+  // Everything the composer needs before spending a round trip.
+  type XyzWriteDraft = {
+    postId : Nat;
+    writeId : Text;
+    title : ?Text;
+    nodeType : Text;
+    costTenths : Nat;
+    costText : Text;
+    canPublish : Bool;
+    reason : ?Text;
+    tokenNodeId : ?Text;
+  };
+
   type PaginatedPosts = {
     posts : [PostResponse];
     nextCursor : ?Nat;
@@ -216,6 +332,11 @@ actor {
   let appToXyz : Map.Map<Principal, Principal>;    // P_hv  -> P_xyz (attestation)
 
   transient let linkInFlight = Map.empty<Principal, Bool>();
+  // One in-flight write per post. The app is idempotent on (writeId, digest)
+  // but not concurrency-safe: two simultaneous commits can both pass its
+  // "already written" check and both charge. This is the only thing that
+  // guarantees a single charge per post.
+  transient let writeInFlight = Map.empty<Nat, Bool>();
 
   transient let maxPostLength : Nat = 280;
   transient let editDeleteWindowNanos : Int = 900_000_000_000;
@@ -570,6 +691,9 @@ actor {
 
   func branchHasToken(ids : [Nat]) : Bool {
     for (id in ids.values()) {
+      // A write in flight is treated like a published token: the branch must
+      // survive until the commit resolves, or we would mark a purged post.
+      if (writeInFlight.get(id) != null) { return true };
       switch (postGraphRefs.get(id)) {
         case (?ref) {
           switch (ref.tokenNodeId) {
@@ -682,6 +806,226 @@ actor {
 
   func releaseLinkLock(p : Principal) {
     linkInFlight.remove(p);
+  };
+
+  // ── Hyvmind write client ────────────────────────────────────────────────────
+
+  type AppWriteApi = actor {
+    previewXyzWrite : (
+      Principal,
+      Text,
+      [Principal],
+      XyzPostInput,
+    ) -> async XyzPreviewResult;
+    commitXyzWrite : (
+      Principal,
+      Text,
+      Text,
+      [Principal],
+      XyzPostInput,
+    ) -> async XyzCommitOutcome;
+    getXyzWrite : (Principal, Text) -> async ?XyzCommitOk;
+    // Only the field we need; Candid record width-subtyping makes the rest of
+    // GraphData irrelevant. The largest published graph is ~37 KB of JSON.
+    getPublishedSourceGraph : (Text) -> async ?{
+      interpretationTokens : [{ id : Text; parentLawTokenId : Text }];
+    };
+  };
+
+  func appWrite() : AppWriteApi = actor (appBackendText);
+
+  // Seconds, as Nat32. A commit applies the whole write in one message, so
+  // this is generous rather than tight.
+  transient let writeReadTimeout : Nat32 = 30;
+  transient let writePreviewTimeout : Nat32 = 30;
+  transient let writeCommitTimeout : Nat32 = 60;
+
+  transient let maxMutualFollows : Nat = 500;   // the app's cap
+
+  func acquireWriteLock(postId : Nat) : Bool {
+    switch (writeInFlight.get(postId)) {
+      case (?true) { false };
+      case (_) { writeInFlight.add(postId, true); true };
+    };
+  };
+
+  func releaseWriteLock(postId : Nat) {
+    writeInFlight.remove(postId);
+  };
+
+  // xyz principals the writer mutually follows. The app maps these through its
+  // own xyz->app link table and drops the rest.
+  func mutualFollowsOf(p : Principal) : [Principal] {
+    let out = List.empty<Principal>();
+    let f = switch (following.get(p)) {
+      case (?m) { m };
+      case (null) { return [] };
+    };
+    let g = switch (followers.get(p)) {
+      case (?m) { m };
+      case (null) { return [] };
+    };
+    for ((q, _) in f.entries()) {
+      if (out.size() >= maxMutualFollows) { return out.toArray() };
+      if (g.get(q) != null) { out.add(q) };
+    };
+    out.toArray();
+  };
+
+  // ── Title derivation ────────────────────────────────────────────────────────
+  // The title becomes the token's permanent node name, so it is a pure
+  // function of the immutable post text: first non-empty line, no '@',
+  // whitespace collapsed, at most 200 characters.
+
+  func normalizeSpaces(t : Text) : Text {
+    var out = "";
+    var first = true;
+    for (part in t.split(#text " ")) {
+      if (part.size() > 0) {
+        if (not first) { out #= " " };
+        out #= part;
+        first := false;
+      };
+    };
+    out;
+  };
+
+  func truncateText(t : Text, max : Nat) : Text {
+    if (t.size() <= max) { return t };
+    Text.fromArray(t.toArray().sliceToArray(0, max));
+  };
+
+  func deriveTitle(text : Text) : ?Text {
+    let stripped = text.map(
+      func(c : Char) : Char {
+        if (c == '@' or c == '\t' or c == '\r') { ' ' } else { c };
+      }
+    );
+    for (line in stripped.split(#char '\n')) {
+      let t = normalizeSpaces(line.trim(#char ' '));
+      if (t.size() > 0) {
+        let bounded = truncateText(t, 200).trimEnd(#char ' ');
+        if (bounded.size() > 0) { return ?bounded };
+      };
+    };
+    null;
+  };
+
+  // ── Cost ────────────────────────────────────────────────────────────────────
+  // Tenths of BUZZ, matching the app: 50 for the token itself, plus 1 when the
+  // citation adds a cross-reference edge. Attaching to a law citing that same
+  // law would be `#blocked` (hierarchyEdge), so laws cite nothing.
+
+  func xyzCostTenths(nodeType : Text) : Nat {
+    if (nodeType == "interpEntity") { 51 } else { 50 };
+  };
+
+  func formatTenths(v : Nat) : Text {
+    (v / 10).toText() # "." # (v % 10).toText();
+  };
+
+  func isCitableType(t : Text) : Bool {
+    t == "lawEntity" or t == "interpEntity";
+  };
+
+  // The write payload is a pure function of the stored post and graph: no
+  // field comes from the client, so `#conflict` cannot happen by user action.
+  func buildWriteInput(post : Post, ref : GraphRef) : async {
+    #ok : XyzPostInput;
+    #err : Text;
+  } {
+    let title = switch (deriveTitle(post.text)) {
+      case (?t) { t };
+      case (null) {
+        return #err("This post needs a first line that can become a title.");
+      };
+    };
+    if (post.text.size() == 0) {
+      return #err("A published interpretation needs text.");
+    };
+
+    let parentLaw : XyzRef = if (ref.nodeType == "lawEntity") {
+      // The cited law is the anchor. Citing it would be a hierarchyEdge block.
+      { ref = ref.nodeId; nodeType = ?"lawEntity" };
+    } else if (ref.nodeType == "interpEntity") {
+      let graph = try {
+        let app = appWrite();
+        await (with timeout = writeReadTimeout) app.getPublishedSourceGraph(ref.graphId);
+      } catch (_e) {
+        return #err("Could not read the graph to find the enclosing law.");
+      };
+      let tokens = switch (graph) {
+        case (?g) { g.interpretationTokens };
+        case (null) { return #err("That graph is no longer published.") };
+      };
+      var lawId : ?Text = null;
+      for (t in tokens.values()) {
+        if (t.id == ref.nodeId) { lawId := ?t.parentLawTokenId };
+      };
+      switch (lawId) {
+        case (?id) { { ref = id; nodeType = ?"lawEntity" } };
+        case (null) {
+          return #err("That interpretation is no longer in the graph.");
+        };
+      };
+    } else {
+      return #err("Only law tokens and interpretations can be published.");
+    };
+
+    let citations : [XyzCitation] = if (ref.nodeType == "interpEntity") {
+      [{
+        target = { ref = ref.nodeId; nodeType = ?"interpEntity" };
+        edgeLabel = "cites";
+        bidirectional = false;
+      }]
+    } else { [] };
+
+    #ok({
+      apiVersion = 1;
+      title;
+      content = post.text;
+      parentLaw;
+      ancestors = [];
+      citations;
+    });
+  };
+
+  // A post is writable by its author, once, while it is a graph post.
+  func writablePost(postId : Nat, caller : Principal) : {
+    #ok : (Post, GraphRef);
+    #err : Text;
+  } {
+    let post = switch (posts.get(postId)) {
+      case (?p) { p };
+      case (null) { return #err("Post not found") };
+    };
+    if (post.author != caller) { return #err("Only the author can publish this post") };
+    let ref = switch (postGraphRefs.get(postId)) {
+      case (?r) { r };
+      case (null) { return #err("Only graph posts can be published") };
+    };
+    if (not isCitableType(ref.nodeType)) {
+      return #err("Only law tokens and interpretations can be published");
+    };
+    #ok((post, ref));
+  };
+
+  func markPublished(postId : Nat, ref : GraphRef, interpId : Text) {
+    // The post could have been vote-deleted while the commit was in flight;
+    // never resurrect a graph ref for a post that no longer exists.
+    if (posts.get(postId) == null) { return };
+    let updated : GraphRef = {
+      graphId = ref.graphId;
+      graphName = ref.graphName;
+      nodeId = ref.nodeId;
+      nodeName = ref.nodeName;
+      nodeType = ref.nodeType;
+      path = ref.path;
+      attachedAt = ref.attachedAt;
+      hiddenAt = ref.hiddenAt;
+      tokenNodeId = ?interpId;
+    };
+    postGraphRefs.add(postId, updated);
   };
 
   func addNotification(recipient : Principal, actor_ : Principal, notificationType : NotificationType) {
@@ -1916,6 +2260,191 @@ actor {
             #ok(?refreshed);
           };
         };
+      };
+    };
+  };
+
+  // ── Graph post publishing (Phase 3) ─────────────────────────────────────────
+
+  // Cheap, local, and never touches the app: exactly what the composer needs to
+  // show a title and a price before spending a round trip.
+  public query ({ caller }) func getXyzWriteDraft(postId : Nat) : async ?XyzWriteDraft {
+    let post = switch (posts.get(postId)) {
+      case (?p) { p };
+      case (null) { return null };
+    };
+    if (post.author != caller) { return null };
+    let ref = switch (postGraphRefs.get(postId)) {
+      case (?r) { r };
+      case (null) { return null };
+    };
+    let title = deriveTitle(post.text);
+    let linked = linkByXyz.get(caller) != null;
+    let reason : ?Text = if (ref.tokenNodeId != null) {
+      ?"This post is already published.";
+    } else if (not isCitableType(ref.nodeType)) {
+      ?"Only law tokens and interpretations can be published.";
+    } else if (post.text.size() == 0) {
+      ?"A published interpretation needs text.";
+    } else if (title == null) {
+      ?"This post needs a first line that can become a title.";
+    } else if (not linked) {
+      ?"Link your hyvmind.app account first.";
+    } else {
+      null;
+    };
+    let cost = xyzCostTenths(ref.nodeType);
+    ?{
+      postId;
+      writeId = "xyz:" # postId.toText();
+      title;
+      nodeType = ref.nodeType;
+      costTenths = cost;
+      costText = formatTenths(cost);
+      canPublish = reason == null;
+      reason;
+      tokenNodeId = ref.tokenNodeId;
+    };
+  };
+
+  public shared ({ caller }) func previewXyzWriteForPost(
+    postId : Nat,
+  ) : async XyzPreviewResult {
+    requireAuth(caller);
+    let pair = switch (writablePost(postId, caller)) {
+      case (#ok(p)) { p };
+      case (#err(m)) { return #err({ kind = #malformed; message = m }) };
+    };
+    let (post, ref) = pair;
+    switch (ref.tokenNodeId) {
+      case (?_) {
+        return #err({ kind = #malformed; message = "This post is already published." });
+      };
+      case (null) {};
+    };
+    if (linkByXyz.get(caller) == null) {
+      return #notLinked({
+        message = "This xyz account is not linked to a hyvmind.app account.";
+        writerXyz = caller;
+      });
+    };
+    let input = switch (await buildWriteInput(post, ref)) {
+      case (#ok(i)) { i };
+      case (#err(m)) { return #err({ kind = #malformed; message = m }) };
+    };
+    try {
+      let app = appWrite();
+      await (with timeout = writePreviewTimeout) app.previewXyzWrite(
+        caller,
+        "xyz:" # postId.toText(),
+        mutualFollowsOf(caller),
+        input,
+      );
+    } catch (_e) {
+      #err({
+        kind = #internal;
+        message = "Could not reach hyvmind.app. Nothing was charged.";
+      });
+    };
+  };
+
+  public shared ({ caller }) func commitXyzWriteForPost(
+    postId : Nat,
+    expectedDigest : Text,
+  ) : async XyzCommitOutcome {
+    requireAuth(caller);
+    let pair = switch (writablePost(postId, caller)) {
+      case (#ok(p)) { p };
+      case (#err(m)) { return #err({ kind = #malformed; message = m }) };
+    };
+    let (post, ref) = pair;
+    switch (ref.tokenNodeId) {
+      case (?id) { return #alreadyPublished({ interpNodeId = id }) };
+      case (null) {};
+    };
+    if (linkByXyz.get(caller) == null) {
+      return #notLinked({
+        message = "This xyz account is not linked to a hyvmind.app account.";
+        writerXyz = caller;
+      });
+    };
+    if (not acquireWriteLock(postId)) {
+      return #busy({ message = "A publish for this post is already in progress." });
+    };
+    let writeId = "xyz:" # postId.toText();
+    try {
+      let input = switch (await buildWriteInput(post, ref)) {
+        case (#ok(i)) { i };
+        case (#err(m)) { return #err({ kind = #malformed; message = m }) };
+      };
+      let result = try {
+        let app = appWrite();
+        await (with timeout = writeCommitTimeout) app.commitXyzWrite(
+          caller,
+          writeId,
+          expectedDigest,
+          mutualFollowsOf(caller),
+          input,
+        );
+      } catch (_e) {
+        return #unknown({
+          message = "The app did not confirm. The write may still land; check status before retrying.";
+          writeId;
+        });
+      };
+      switch (result) {
+        case (#ok(ok)) {
+          markPublished(postId, ref, ok.interpNodeId);
+          #ok(ok);
+        };
+        case (_) { result };
+      };
+    } finally {
+      releaseWriteLock(postId);
+    };
+  };
+
+  // Recovers a commit whose reply was lost, and confirms one that landed.
+  // The app keeps write results indefinitely, keyed on (xyz, writeId).
+  public shared ({ caller }) func reconcileXyzWriteForPost(
+    postId : Nat,
+  ) : async XyzCommitOutcome {
+    requireAuth(caller);
+    let pair = switch (writablePost(postId, caller)) {
+      case (#ok(p)) { p };
+      case (#err(m)) { return #err({ kind = #malformed; message = m }) };
+    };
+    let (_, ref) = pair;
+    switch (ref.tokenNodeId) {
+      case (?id) { return #alreadyPublished({ interpNodeId = id }) };
+      case (null) {};
+    };
+    if (linkByXyz.get(caller) == null) {
+      return #notLinked({
+        message = "This xyz account is not linked to a hyvmind.app account.";
+        writerXyz = caller;
+      });
+    };
+    let writeId = "xyz:" # postId.toText();
+    let remote = try {
+      let app = appWrite();
+      await (with timeout = writeReadTimeout) app.getXyzWrite(caller, writeId);
+    } catch (_e) {
+      return #unknown({
+        message = "Could not reach hyvmind.app to check this write.";
+        writeId;
+      });
+    };
+    switch (remote) {
+      case (?ok) {
+        markPublished(postId, ref, ok.interpNodeId);
+        #ok(ok);
+      };
+      case (null) {
+        #notFound({
+          message = "No commit was recorded for this post. You can publish it now.";
+          writeId;
+        });
       };
     };
   };

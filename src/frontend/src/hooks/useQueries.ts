@@ -1116,3 +1116,70 @@ export function useReconcileAppLink() {
     },
   });
 }
+
+// ── Graph post publishing ───────────────────────────────────────────────────
+
+export function useXyzWriteDraft(postId: bigint | null, enabled = true) {
+  const { actor, isFetching } = useActor(createActor);
+
+  return useQuery({
+    queryKey: ["xyzWriteDraft", postId?.toString()],
+    queryFn: async () => {
+      if (!actor || postId == null) throw new Error("Actor not ready");
+      return actor.getXyzWriteDraft(postId);
+    },
+    enabled: !!actor && !isFetching && postId != null && enabled,
+  });
+}
+
+export function usePreviewXyzWrite() {
+  const { actor } = useActor(createActor);
+  return useMutation({
+    mutationFn: async (postId: bigint) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.previewXyzWriteForPost(postId);
+    },
+  });
+}
+
+export function useCommitXyzWrite() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      postId,
+      digest,
+    }: {
+      postId: bigint;
+      digest: string;
+    }) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.commitXyzWriteForPost(postId, digest);
+    },
+    onSuccess: (result, { postId }) => {
+      if (result.__kind__ === "ok" || result.__kind__ === "alreadyPublished") {
+        queryClient.invalidateQueries({ queryKey: ["xyzWriteDraft"] });
+        queryClient.invalidateQueries({ queryKey: ["graphNodePosts"] });
+        invalidatePostFeedQueries(queryClient, postId);
+      }
+    },
+  });
+}
+
+export function useReconcileXyzWrite() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (postId: bigint) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.reconcileXyzWriteForPost(postId);
+    },
+    onSuccess: (result, postId) => {
+      if (result.__kind__ === "ok" || result.__kind__ === "alreadyPublished") {
+        queryClient.invalidateQueries({ queryKey: ["xyzWriteDraft"] });
+        queryClient.invalidateQueries({ queryKey: ["graphNodePosts"] });
+        invalidatePostFeedQueries(queryClient, postId);
+      }
+    },
+  });
+}
