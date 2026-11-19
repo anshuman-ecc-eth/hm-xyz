@@ -32,6 +32,25 @@ export interface FollowUserResponse {
   'displayName' : string,
   'profilePictureHash' : [] | [ExternalBlob],
 }
+export interface GraphRef {
+  'hiddenAt' : [] | [Time],
+  'nodeId' : string,
+  'path' : string,
+  'graphId' : string,
+  'tokenNodeId' : [] | [string],
+  'attachedAt' : Time,
+  'nodeName' : string,
+  'nodeType' : string,
+  'graphName' : string,
+}
+export interface GraphRefInput {
+  'nodeId' : string,
+  'path' : string,
+  'graphId' : string,
+  'nodeName' : string,
+  'nodeType' : string,
+  'graphName' : string,
+}
 export interface Notification {
   'id' : bigint,
   'notificationType' : NotificationType,
@@ -51,6 +70,14 @@ export interface PaginatedFollows {
   'hasMore' : boolean,
   'users' : Array<FollowUserResponse>,
 }
+export interface PaginatedGraphPosts {
+  'nodeWeight' : bigint,
+  'hasMore' : boolean,
+  'contributionCount' : bigint,
+  'tokenCount' : bigint,
+  'posts' : Array<PostResponse>,
+  'nextCursor' : [] | [bigint],
+}
 export interface PaginatedNotifications {
   'hasMore' : boolean,
   'notifications' : Array<Notification>,
@@ -63,7 +90,10 @@ export interface PaginatedPosts {
 }
 export interface PostResponse {
   'id' : bigint,
+  'dislikeCount' : bigint,
+  'weight' : [] | [bigint],
   'postType' : PostType,
+  'graphRef' : [] | [GraphRef],
   'authorUsername' : string,
   'likeCount' : bigint,
   'isRepostedByCurrentUser' : boolean,
@@ -71,10 +101,13 @@ export interface PostResponse {
   'repostCount' : bigint,
   'createdAt' : Time,
   'text' : string,
+  'canEdit' : boolean,
   'author' : Principal,
   'mediaHash' : [] | [ExternalBlob],
   'replyCount' : bigint,
   'mediaType' : [] | [string],
+  'canDelete' : boolean,
+  'isDislikedByCurrentUser' : boolean,
   'editedAt' : [] | [Time],
   'authorDisplayName' : string,
   'isLikedByCurrentUser' : boolean,
@@ -151,6 +184,10 @@ export interface _SERVICE {
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'blockUser' : ActorMethod<[Principal], undefined>,
   'checkUsernameAvailability' : ActorMethod<[string], boolean>,
+  'createGraphPost' : ActorMethod<
+    [GraphRefInput, string, [] | [ExternalBlob], [] | [string]],
+    PostResponse
+  >,
   'createPost' : ActorMethod<
     [string, [] | [ExternalBlob], [] | [string]],
     PostResponse
@@ -160,6 +197,7 @@ export interface _SERVICE {
     PostResponse
   >,
   'deletePost' : ActorMethod<[bigint], undefined>,
+  'dislikePost' : ActorMethod<[bigint], undefined>,
   'editPost' : ActorMethod<[bigint, string], PostResponse>,
   'followUser' : ActorMethod<[Principal], undefined>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
@@ -172,6 +210,10 @@ export interface _SERVICE {
     PaginatedNotifications
   >,
   'getPost' : ActorMethod<[bigint], [] | [PostResponse]>,
+  'getPostsByGraphNode' : ActorMethod<
+    [string, string, [] | [bigint], bigint],
+    PaginatedGraphPosts
+  >,
   'getPostsByHashtag' : ActorMethod<
     [string, [] | [bigint], bigint],
     PaginatedPosts
@@ -205,6 +247,7 @@ export interface _SERVICE {
   'searchUsers' : ActorMethod<[string, bigint], Array<UserProfileResponse>>,
   'setProfile' : ActorMethod<[string, string, string], undefined>,
   'unblockUser' : ActorMethod<[Principal], undefined>,
+  'undislikePost' : ActorMethod<[bigint], undefined>,
   'undoRepost' : ActorMethod<[bigint], undefined>,
   'unfollowUser' : ActorMethod<[Principal], undefined>,
   'unlikePost' : ActorMethod<[bigint], undefined>,

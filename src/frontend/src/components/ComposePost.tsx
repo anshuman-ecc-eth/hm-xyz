@@ -4,13 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
-import { Loader2, Paperclip, X } from "lucide-react";
+import { Link2, Loader2, Paperclip, X } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { ExternalBlob } from "../backend";
+import type { ExternalBlob, GraphRefInput } from "../backend";
 import { useMediaUpload } from "../hooks/useMediaUpload";
 import {
+  useCreateGraphPost,
   useCreatePost,
   useCreateReply,
   usePost,
@@ -19,6 +20,7 @@ import {
 import { useAppStore } from "../stores/useAppStore";
 import { MAX_POST_LENGTH } from "../utils/constants";
 import { fromNanoseconds, getInitials } from "../utils/formatting";
+import { NodeCitationPicker } from "./NodeCitationPicker";
 import { PostText } from "./PostText";
 
 interface ComposePostProps {
@@ -32,15 +34,31 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
   const clearCompose = useAppStore((s) => s.clearCompose);
   const [text, setText] = useState("");
   const { mutate: createPost, isPending: isPostPending } = useCreatePost();
+  const { mutate: createGraphPost, isPending: isGraphPostPending } =
+    useCreateGraphPost();
   const { mutate: createReply, isPending: isReplyPending } = useCreateReply();
   const { mutate: quotePost, isPending: isQuotePending } = useQuotePost();
   const { data: quotedPost } = usePost(quotedPostId ?? null);
+  const { data: replyToPost } = usePost(replyToId ?? null);
+
+  const [citation, setCitation] = useState<GraphRefInput | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // A reply or quote of a token inherits its node on the server; the composer
+  // only shows it, and never lets the user change it.
+  const inheritedRef = isReplyMode
+    ? replyToPost?.graphRef
+    : isQuoteMode
+      ? quotedPost?.graphRef
+      : undefined;
 
   const isPending = isReplyMode
     ? isReplyPending
     : isQuoteMode
       ? isQuotePending
-      : isPostPending;
+      : citation
+        ? isGraphPostPending
+        : isPostPending;
   const {
     file,
     previewUrl,
@@ -78,11 +96,14 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
       setText("");
       removeMedia();
       setUploadProgress(null);
+      setCitation(null);
       if (isQuoteMode) {
         clearCompose();
         toast.success("Quote posted");
       } else if (isReplyMode) {
         toast.success("Reply posted");
+      } else if (citation) {
+        toast.success("Contribution published");
       } else {
         toast.success("Post published");
       }
@@ -101,6 +122,11 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
     } else if (isReplyMode) {
       createReply(
         { parentPostId: replyToId, text: text.trim(), mediaHash, mediaType },
+        { onSuccess, onError },
+      );
+    } else if (citation) {
+      createGraphPost(
+        { ref: citation, text: text.trim(), mediaHash, mediaType },
         { onSuccess, onError },
       );
     } else {
@@ -135,12 +161,16 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
       ? "Quoting..."
       : isReplyMode
         ? "Replying..."
-        : "Posting..."
+        : citation
+          ? "Publishing..."
+          : "Posting..."
     : isQuoteMode
       ? "Quote"
       : isReplyMode
         ? "Reply"
-        : "Post";
+        : citation
+          ? "Publish"
+          : "Post";
 
   return (
     <div className="border-b border-border px-4 py-3 font-mono">
@@ -156,6 +186,40 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
           isReplyMode ? "min-h-[60px] text-sm" : "min-h-[80px] text-[15px]",
         )}
       />
+      {inheritedRef && (
+        <div className="mt-2 flex items-center gap-2 border border-border px-2 py-1.5">
+          <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+            {inheritedRef.path}
+          </span>
+          <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+            inherited
+          </span>
+        </div>
+      )}
+      {!inheritedRef && citation && (
+        <div className="mt-2 border border-border">
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-[11px]">
+              {citation.path}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCitation(null)}
+              disabled={isSubmitting}
+              aria-label="Remove citation"
+              className="shrink-0 p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <p className="border-t px-2 py-1 text-[10px] text-muted-foreground">
+            Graph posts can't be edited or deleted, and replies attach to the
+            same node.
+          </p>
+        </div>
+      )}
       {isQuoteMode && quotedPost && (
         <div className="relative mt-2 border border-border p-3">
           <button
@@ -240,6 +304,19 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
       )}
       <div className="mt-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
+          {!isReplyMode && !isQuoteMode && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 px-2 text-[11px]"
+              onClick={() => setPickerOpen(true)}
+              disabled={isSubmitting || !!citation}
+              aria-label="Cite a node"
+            >
+              <Link2 className="h-3.5 w-3.5" />
+              Cite
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -270,6 +347,11 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
         </Button>
       </div>
       <MediaInput />
+      <NodeCitationPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={(ref) => setCitation(ref)}
+      />
     </div>
   );
 }

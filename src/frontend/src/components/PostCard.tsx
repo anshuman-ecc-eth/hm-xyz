@@ -19,6 +19,7 @@ import {
   Pencil,
   Quote,
   Repeat2,
+  ThumbsDown,
   Trash2,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -27,6 +28,7 @@ import { usePost } from "../hooks/useQueries";
 import { EDIT_DELETE_WINDOW_MS } from "../utils/constants";
 import { fromNanoseconds, getInitials } from "../utils/formatting";
 import type { Post, PostType } from "../utils/types";
+import { CitationChip } from "./CitationChip";
 import { DeletePostDialog } from "./DeletePostDialog";
 import { EditPostForm } from "./EditPostForm";
 import { PostText } from "./PostText";
@@ -75,12 +77,15 @@ export function PostCard({ post }: PostCardProps) {
     handleRepost,
     isRepostPending,
     handleQuote,
+    handleDislikeToggle,
+    isDislikePending,
   } = usePostActions({
     postId: post.id,
     actionPostId: actionPost.id,
     postText: post.text,
     isLikedByCurrentUser: actionPost.isLikedByCurrentUser,
     isRepostedByCurrentUser: actionPost.isRepostedByCurrentUser,
+    isDislikedByCurrentUser: actionPost.isDislikedByCurrentUser ?? false,
   });
 
   const [showLightbox, setShowLightbox] = useState(false);
@@ -103,7 +108,8 @@ export function PostCard({ post }: PostCardProps) {
   const createdDate = fromNanoseconds(contentPost.createdAt);
   const isWithinWindow =
     Date.now() - createdDate.getTime() < EDIT_DELETE_WINDOW_MS;
-  const canModify = isOwnPost && isWithinWindow;
+  const canModify =
+    isOwnPost && isWithinWindow && !contentPost.graphRef && !isRepost;
 
   const contentInitials = getInitials(contentPost.authorDisplayName);
   const contentAvatarUrl = contentPost.authorProfilePictureHash
@@ -295,6 +301,9 @@ export function PostCard({ post }: PostCardProps) {
                   text={contentPost.text}
                   className="mt-1.5 whitespace-pre-wrap break-words font-sans text-[15px] leading-[1.55]"
                 />
+              )}
+              {contentPost.graphRef && (
+                <CitationChip graphRef={contentPost.graphRef} />
               )}
               {contentMediaUrl &&
                 (contentMediaType === "video" ? (
@@ -492,6 +501,42 @@ export function PostCard({ post }: PostCardProps) {
                     <span>{actionPost.likeCount.toString()}</span>
                   )}
                 </button>
+                {actionPost.graphRef && (
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex items-center gap-1 font-mono text-[11px] tabular-nums transition-colors",
+                      actionPost.isDislikedByCurrentUser
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                    onClick={handleDislikeToggle}
+                    disabled={isDislikePending}
+                    aria-label={
+                      actionPost.isDislikedByCurrentUser
+                        ? "Remove dislike"
+                        : "Dislike"
+                    }
+                  >
+                    <ThumbsDown
+                      className={cn(
+                        "h-4 w-4",
+                        actionPost.isDislikedByCurrentUser && "fill-current",
+                      )}
+                    />
+                    {(actionPost.dislikeCount ?? 0n) > 0n && (
+                      <span>{(actionPost.dislikeCount ?? 0n).toString()}</span>
+                    )}
+                  </button>
+                )}
+                {actionPost.graphRef && (
+                  <span
+                    className="font-mono text-[11px] tabular-nums text-muted-foreground"
+                    title="xyz weight"
+                  >
+                    W {actionPost.weight?.toString() ?? "0"}
+                  </span>
+                )}
               </div>
             </>
           )}

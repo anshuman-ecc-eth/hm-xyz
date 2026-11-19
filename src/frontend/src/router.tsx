@@ -9,6 +9,7 @@ import {
 import { AppLayout } from "./components/AppLayout";
 import { Feed } from "./components/Feed";
 import { FollowList } from "./components/FollowList";
+import { NodePage } from "./components/NodePage";
 import { NotificationsPage } from "./components/NotificationsPage";
 import { PostDetail } from "./components/PostDetail";
 import { ProfilePage } from "./components/ProfilePage";
@@ -62,6 +63,15 @@ const notificationsRoute = createRoute({
   component: NotificationsPage,
 });
 
+const nodeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "node/$graphId",
+  validateSearch: (search: Record<string, unknown>) => ({
+    node: (search.node as string) || "",
+  }),
+  component: NodePage,
+});
+
 const hashtagRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "hashtag/$tag",
@@ -95,6 +105,7 @@ const routeTree = rootRoute.addChildren([
   postRoute,
   searchRoute,
   notificationsRoute,
+  nodeRoute,
   hashtagRoute,
   followersRoute,
   followingRoute,

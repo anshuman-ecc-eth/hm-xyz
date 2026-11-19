@@ -59,6 +59,25 @@ export interface FollowUserResponse {
     displayName: string;
     profilePictureHash?: ExternalBlob;
 }
+export interface GraphRef {
+    hiddenAt?: Time;
+    nodeId: string;
+    path: string;
+    graphId: string;
+    tokenNodeId?: string;
+    attachedAt: Time;
+    nodeName: string;
+    nodeType: string;
+    graphName: string;
+}
+export interface GraphRefInput {
+    nodeId: string;
+    path: string;
+    graphId: string;
+    nodeName: string;
+    nodeType: string;
+    graphName: string;
+}
 export interface Notification {
     id: bigint;
     notificationType: NotificationType;
@@ -91,6 +110,14 @@ export interface PaginatedFollows {
     hasMore: boolean;
     users: Array<FollowUserResponse>;
 }
+export interface PaginatedGraphPosts {
+    nodeWeight: bigint;
+    hasMore: boolean;
+    contributionCount: bigint;
+    tokenCount: bigint;
+    posts: Array<PostResponse>;
+    nextCursor?: bigint;
+}
 export interface PaginatedNotifications {
     hasMore: boolean;
     notifications: Array<Notification>;
@@ -103,7 +130,10 @@ export interface PaginatedPosts {
 }
 export interface PostResponse {
     id: bigint;
+    dislikeCount: bigint;
+    weight?: bigint;
     postType: PostType;
+    graphRef?: GraphRef;
     authorUsername: string;
     likeCount: bigint;
     isRepostedByCurrentUser: boolean;
@@ -111,10 +141,13 @@ export interface PostResponse {
     repostCount: bigint;
     createdAt: Time;
     text: string;
+    canEdit: boolean;
     author: Principal;
     mediaHash?: ExternalBlob;
     replyCount: bigint;
     mediaType?: string;
+    canDelete: boolean;
+    isDislikedByCurrentUser: boolean;
     editedAt?: Time;
     authorDisplayName: string;
     isLikedByCurrentUser: boolean;
@@ -178,9 +211,11 @@ export interface backendInterface {
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     blockUser(user: Principal): Promise<void>;
     checkUsernameAvailability(username: string): Promise<boolean>;
+    createGraphPost(ref: GraphRefInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createPost(text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createReply(parentPostId: bigint, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     deletePost(postId: bigint): Promise<void>;
+    dislikePost(postId: bigint): Promise<void>;
     editPost(postId: bigint, text: string): Promise<PostResponse>;
     followUser(user: Principal): Promise<void>;
     getCallerUserRole(): Promise<UserRole>;
@@ -190,6 +225,7 @@ export interface backendInterface {
     getHomeFeed(cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
     getNotifications(cursor: bigint | null, limit: bigint): Promise<PaginatedNotifications>;
     getPost(postId: bigint): Promise<PostResponse | null>;
+    getPostsByGraphNode(graphId: string, nodeId: string, cursor: bigint | null, limit: bigint): Promise<PaginatedGraphPosts>;
     getPostsByHashtag(tag: string, cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
     getPostsByUser(user: Principal, cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
     getPostsByUsername(username: string, cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
@@ -211,6 +247,7 @@ export interface backendInterface {
     searchUsers(searchText: string, limit: bigint): Promise<Array<UserProfileResponse>>;
     setProfile(username: string, displayName: string, bio: string): Promise<void>;
     unblockUser(user: Principal): Promise<void>;
+    undislikePost(postId: bigint): Promise<void>;
     undoRepost(postId: bigint): Promise<void>;
     unfollowUser(user: Principal): Promise<void>;
     unlikePost(postId: bigint): Promise<void>;

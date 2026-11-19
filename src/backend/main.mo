@@ -42,6 +42,30 @@ actor {
     editedAt : ?Time.Time;
   };
 
+  // A citation held in xyz. `nodeId` is the opaque id from /api/nodes: never
+  // parsed, never synthesised. `path` is a display-only snapshot.
+  type GraphRef = {
+    graphId : Text;
+    graphName : Text;
+    nodeId : Text;
+    nodeName : Text;
+    nodeType : Text;
+    path : Text;
+    attachedAt : Time.Time;
+    hiddenAt : ?Time.Time;   // reserved: xyz-local visibility, never sent to the app
+    tokenNodeId : ?Text;     // reserved: app token id once a write publishes this post
+  };
+
+  // Client-supplied half. Server sets attachedAt, hiddenAt and tokenNodeId.
+  type GraphRefInput = {
+    graphId : Text;
+    graphName : Text;
+    nodeId : Text;
+    nodeName : Text;
+    nodeType : Text;
+    path : Text;
+  };
+
   type PostResponse = {
     id : Nat;
     author : Principal;
@@ -59,6 +83,22 @@ actor {
     repostCount : Nat;
     isLikedByCurrentUser : Bool;
     isRepostedByCurrentUser : Bool;
+    // Graph token fields. `graphRef` is null for regular posts.
+    graphRef : ?GraphRef;
+    weight : ?Int;                    // xyz weight: 1 + likes + reposts - dislikes
+    dislikeCount : Nat;
+    isDislikedByCurrentUser : Bool;
+    canEdit : Bool;
+    canDelete : Bool;
+  };
+
+  type PaginatedGraphPosts = {
+    posts : [PostResponse];
+    nextCursor : ?Nat;
+    hasMore : Bool;
+    nodeWeight : Int;                 // sum over the node's tokens, floored at 0
+    tokenCount : Nat;                 // every token on the node, replies included
+    contributionCount : Nat;          // top-level tokens only
   };
 
   type PaginatedPosts = {
@@ -143,10 +183,20 @@ actor {
   let userNotifications : Map.Map<Principal, Map.Map<Nat, Notification>>;
   var nextNotificationId : Nat;
 
+  // ── Graph tokens ────────────────────────────────────────────────────────────
+  // Presence in postGraphRefs is what makes a post a graph post (a token).
+  let postGraphRefs : Map.Map<Nat, GraphRef>;
+  // graphId -> nodeId -> postId. Nested rather than a "graphId#nodeId" key,
+  // because both ids are opaque text that can contain any separator.
+  let graphNodePosts : Map.Map<Text, Map.Map<Text, Map.Map<Nat, Bool>>>;
+  // Votes are weight only; deletion is decided from these counts.
+  let postDislikes : Map.Map<Nat, Map.Map<Principal, Bool>>;
+
   transient let maxPostLength : Nat = 280;
   transient let editDeleteWindowNanos : Int = 900_000_000_000;
   transient let maxPostsPerUser : Nat = 10_000;
   transient let maxNotificationsPerUser : Nat = 50;
+  transient let maxBranchPosts : Nat = 500;
 
   func validateMedia(mediaHash : ?Storage.ExternalBlob, mediaType : ?Text) {
     switch (mediaHash, mediaType) {
@@ -330,6 +380,244 @@ actor {
         case (?m) { m.remove(postId) };
         case (null) {};
       };
+    };
+  };
+
+  // ── Graph token helpers ─────────────────────────────────────────────────────
+
+  func isKnownNodeType(t : Text) : Bool {
+    t == "curation" or t == "swarm" or t == "location" or t == "lawEntity" or t == "interpEntity";
+  };
+
+  // Shape-only validation: an xyz query cannot reach the app to confirm a node
+  // exists. The ref is permanent and echoed in every response, so every field is
+  // bounded.
+  func validateGraphRef(ref : GraphRefInput) {
+    if (not ref.graphId.startsWith(#text "published-")) {
+      Runtime.trap("graphId must be a published graph id");
+    };
+    if (ref.graphId.size() > 120) { Runtime.trap("graphId too long") };
+    if (ref.nodeId.size() == 0 or ref.nodeId.size() > 600) {
+      Runtime.trap("nodeId length out of range");
+    };
+    if (ref.graphName.size() > 200) { Runtime.trap("graphName too long") };
+    if (ref.nodeName.size() > 300) { Runtime.trap("nodeName too long") };
+    if (ref.path.size() > 600) { Runtime.trap("path too long") };
+    if (not isKnownNodeType(ref.nodeType)) { Runtime.trap("Unknown nodeType") };
+  };
+
+  func getGraphNodeMap(graphId : Text, nodeId : Text) : Map.Map<Nat, Bool> {
+    let byNode = switch (graphNodePosts.get(graphId)) {
+      case (?m) { m };
+      case (null) {
+        let m = Map.empty<Text, Map.Map<Nat, Bool>>();
+        graphNodePosts.add(graphId, m);
+        m;
+      };
+    };
+    switch (byNode.get(nodeId)) {
+      case (?m) { m };
+      case (null) {
+        let m = Map.empty<Nat, Bool>();
+        byNode.add(nodeId, m);
+        m;
+      };
+    };
+  };
+
+  func removeGraphNodePost(graphId : Text, nodeId : Text, postId : Nat) {
+    switch (graphNodePosts.get(graphId)) {
+      case (?byNode) {
+        switch (byNode.get(nodeId)) {
+          case (?m) { m.remove(postId) };
+          case (null) {};
+        };
+      };
+      case (null) {};
+    };
+  };
+
+  func isGraphPost(postId : Nat) : Bool {
+    switch (postGraphRefs.get(postId)) {
+      case (?_) { true };
+      case (null) { false };
+    };
+  };
+
+  // A reply or a quote of a token becomes a token on the same node.
+  func inheritGraphRef(parentPostId : Nat, childId : Nat) {
+    switch (postGraphRefs.get(parentPostId)) {
+      case (null) {};
+      case (?ref) {
+        let child : GraphRef = {
+          graphId = ref.graphId;
+          graphName = ref.graphName;
+          nodeId = ref.nodeId;
+          nodeName = ref.nodeName;
+          nodeType = ref.nodeType;
+          path = ref.path;
+          attachedAt = Time.now();
+          hiddenAt = null;
+          tokenNodeId = null;
+        };
+        postGraphRefs.add(childId, child);
+        getGraphNodeMap(ref.graphId, ref.nodeId).add(childId, true);
+      };
+    };
+  };
+
+  // xyz weight of one token: 1 + likes + reposts - dislikes.
+  func postVoteWeight(postId : Nat) : Int {
+    let likes = switch (postLikes.get(postId)) {
+      case (?m) { m.size() };
+      case (null) { 0 };
+    };
+    let dislikes = switch (postDislikes.get(postId)) {
+      case (?m) { m.size() };
+      case (null) { 0 };
+    };
+    let reposts = switch (postReposts.get(postId)) {
+      case (?m) { m.size() };
+      case (null) { 0 };
+    };
+    1 + likes.toInt() + reposts.toInt() - dislikes.toInt();
+  };
+
+  func shouldDeleteOnVote(postId : Nat) : Bool {
+    let likes = switch (postLikes.get(postId)) {
+      case (?m) { m.size() };
+      case (null) { 0 };
+    };
+    let dislikes = switch (postDislikes.get(postId)) {
+      case (?m) { m.size() };
+      case (null) { 0 };
+    };
+    dislikes > likes and dislikes >= 3;
+  };
+
+  // Collects the reply subtree plus any reposts of its members. Returns null
+  // when the branch exceeds the budget, in which case nothing is deleted.
+  func gatherBranch(root : Nat) : ?[Nat] {
+    let ids = List.empty<Nat>();
+    let seen = Map.empty<Nat, Bool>();
+    ids.add(root);
+    seen.add(root, true);
+    var i = 0;
+    while (i < ids.size()) {
+      let id = ids.at(i);
+      i += 1;
+      switch (postReplies.get(id)) {
+        case (?m) {
+          for ((child, _) in m.entries()) {
+            if (seen.get(child) == null) {
+              seen.add(child, true);
+              ids.add(child);
+            };
+          };
+        };
+        case (null) {};
+      };
+      switch (postReposts.get(id)) {
+        case (?reposters) {
+          for ((p, _) in reposters.entries()) {
+            switch (repostIndex.get(p)) {
+              case (?userReposts) {
+                switch (userReposts.get(id)) {
+                  case (?repostId) {
+                    if (seen.get(repostId) == null) {
+                      seen.add(repostId, true);
+                      ids.add(repostId);
+                    };
+                  };
+                  case (null) {};
+                };
+              };
+              case (null) {};
+            };
+          };
+        };
+        case (null) {};
+      };
+      if (ids.size() > maxBranchPosts) { return null };
+    };
+    ?ids.toArray();
+  };
+
+  func branchHasToken(ids : [Nat]) : Bool {
+    for (id in ids.values()) {
+      switch (postGraphRefs.get(id)) {
+        case (?ref) {
+          switch (ref.tokenNodeId) {
+            case (?_) { return true };
+            case (null) {};
+          };
+        };
+        case (null) {};
+      };
+    };
+    false;
+  };
+
+  func purgePost(id : Nat) {
+    switch (posts.get(id)) {
+      case (?p) {
+        posts.remove(id);
+        decrementPostCount(p.author);
+        removePostHashtags(id, p.text);
+        switch (p.postType) {
+          case (#reply(parentId)) {
+            switch (postReplies.get(parentId)) {
+              case (?m) { m.remove(id) };
+              case (null) {};
+            };
+          };
+          case (#repost(originalId)) {
+            switch (postReposts.get(originalId)) {
+              case (?m) { m.remove(p.author) };
+              case (null) {};
+            };
+            switch (repostIndex.get(p.author)) {
+              case (?m) { m.remove(originalId) };
+              case (null) {};
+            };
+          };
+          case (_) {};
+        };
+      };
+      case (null) {};
+    };
+    postReplies.remove(id);
+    postLikes.remove(id);
+    postDislikes.remove(id);
+    postReposts.remove(id);
+    switch (postGraphRefs.get(id)) {
+      case (?ref) {
+        removeGraphNodePost(ref.graphId, ref.nodeId, id);
+        postGraphRefs.remove(id);
+      };
+      case (null) {};
+    };
+  };
+
+  // Vote-deletes a token and its branch, unless the branch contains a token
+  // already published to the app: those are permanent, and pin everything
+  // beneath them.
+  func maybeDeleteBranch(postId : Nat) {
+    if (not isGraphPost(postId)) { return };
+    if (not shouldDeleteOnVote(postId)) { return };
+    switch (gatherBranch(postId)) {
+      case (null) {};
+      case (?ids) {
+        if (not branchHasToken(ids)) {
+          for (id in ids.values()) { purgePost(id) };
+        };
+      };
+    };
+  };
+
+  func requireNotSelfVote(post : Post, voter : Principal) {
+    if (isGraphPost(post.id) and post.author == voter) {
+      Runtime.trap("Cannot vote on your own contribution");
     };
   };
 
@@ -517,6 +805,34 @@ actor {
       };
       case (null) { false };
     };
+
+    // ── Graph token fields ──
+    let graphRef = postGraphRefs.get(post.id);
+    let isToken = switch (graphRef) {
+      case (?_) { true };
+      case (null) { false };
+    };
+    let dislikes = postDislikes.get(post.id);
+    let dislikeCount = switch (dislikes) {
+      case (?m) { m.size() };
+      case (null) { 0 };
+    };
+    let isDisliked = switch (caller) {
+      case (?c) {
+        switch (dislikes) {
+          case (?m) { m.get(c) != null };
+          case (null) { false };
+        };
+      };
+      case (null) { false };
+    };
+    let isAuthor = switch (caller) {
+      case (?c) { c == post.author };
+      case (null) { false };
+    };
+    let withinWindow = Time.now() - post.createdAt <= editDeleteWindowNanos;
+    let mutable = isAuthor and not isToken and withinWindow;
+
     {
       id = post.id;
       author = post.author;
@@ -543,6 +859,14 @@ actor {
       repostCount;
       isLikedByCurrentUser = isLiked;
       isRepostedByCurrentUser = isReposted;
+      graphRef;
+      weight = if (isToken) {
+        ?(1 + likeCount.toInt() + repostCount.toInt() - dislikeCount.toInt())
+      } else { null };
+      dislikeCount;
+      isDislikedByCurrentUser = isDisliked;
+      canEdit = mutable;
+      canDelete = mutable;
     };
   };
 
@@ -832,6 +1156,65 @@ actor {
     toPostResponse(post, ?caller);
   };
 
+  // Creates one interpretation token: a post plus its immutable citation.
+  public shared ({ caller }) func createGraphPost(
+    ref : GraphRefInput,
+    text : Text,
+    mediaHash : ?Storage.ExternalBlob,
+    mediaType : ?Text,
+  ) : async PostResponse {
+    requireAuth(caller);
+    validateMedia(mediaHash, mediaType);
+    validateGraphRef(ref);
+    requirePostCapNotReached(caller);
+    switch (userProfiles.get(caller)) {
+      case (null) { Runtime.trap("Must create profile before citing") };
+      case (?_) {};
+    };
+    if (text.size() == 0 and mediaHash == null) {
+      Runtime.trap("Post must contain text or media");
+    };
+    if (text.size() > maxPostLength) {
+      Runtime.trap("Post text must be 280 characters or fewer");
+    };
+
+    let now = Time.now();
+    let id = nextPostId;
+    nextPostId += 1;
+
+    let post : Post = {
+      id;
+      author = caller;
+      text;
+      mediaHash;
+      mediaType;
+      postType = #original;
+      createdAt = now;
+      editedAt = null;
+    };
+
+    posts.add(id, post);
+    incrementPostCount(caller);
+    indexPostHashtags(id, text);
+    notifyMentions(text, id, caller);
+
+    let graphRef : GraphRef = {
+      graphId = ref.graphId;
+      graphName = ref.graphName;
+      nodeId = ref.nodeId;
+      nodeName = ref.nodeName;
+      nodeType = ref.nodeType;
+      path = ref.path;
+      attachedAt = now;
+      hiddenAt = null;
+      tokenNodeId = null;
+    };
+    postGraphRefs.add(id, graphRef);
+    getGraphNodeMap(ref.graphId, ref.nodeId).add(id, true);
+
+    toPostResponse(post, ?caller);
+  };
+
   public query ({ caller }) func getPost(postId : Nat) : async ?PostResponse {
     let isAnon = caller.isAnonymous();
     let c = if (isAnon) { null } else { ?caller };
@@ -862,6 +1245,9 @@ actor {
     };
     if (post.author != caller) {
       Runtime.trap("Cannot edit another user's post");
+    };
+    if (isGraphPost(postId)) {
+      Runtime.trap("Graph posts cannot be edited");
     };
     let now = Time.now();
     if (now - post.createdAt > editDeleteWindowNanos) {
@@ -895,6 +1281,9 @@ actor {
     if (post.author != caller) {
       Runtime.trap("Cannot delete another user's post");
     };
+    if (isGraphPost(postId)) {
+      Runtime.trap("Graph posts cannot be deleted");
+    };
     let now = Time.now();
     if (now - post.createdAt > editDeleteWindowNanos) {
       Runtime.trap("Delete window has expired (15 minutes)");
@@ -904,6 +1293,7 @@ actor {
     decrementPostCount(caller);
     removePostHashtags(postId, post.text);
     postLikes.remove(postId);
+    postDislikes.remove(postId);
 
     // Clean up type-specific indexes
     switch (post.postType) {
@@ -1148,6 +1538,12 @@ actor {
     if (isBlockedBidirectional(caller, post.author)) {
       Runtime.trap("Cannot interact with this user");
     };
+    requireNotSelfVote(post, caller);
+    // Liking clears a dislike: one vote per principal.
+    switch (postDislikes.get(postId)) {
+      case (?m) { m.remove(caller) };
+      case (null) {};
+    };
     let likes = getNatPrincipalMap(postLikes, postId);
     let alreadyLiked = likes.get(caller) != null;
     likes.add(caller, true);
@@ -1158,10 +1554,50 @@ actor {
 
   public shared ({ caller }) func unlikePost(postId : Nat) : async () {
     requireAuth(caller);
+    switch (posts.get(postId)) {
+      case (null) { Runtime.trap("Post not found") };
+      case (?post) { requireNotSelfVote(post, caller) };
+    };
     switch (postLikes.get(postId)) {
       case (?m) { m.remove(caller) };
       case (null) {};
     };
+    maybeDeleteBranch(postId);
+  };
+
+  public shared ({ caller }) func dislikePost(postId : Nat) : async () {
+    requireAuth(caller);
+    let post = switch (posts.get(postId)) {
+      case (?p) { p };
+      case (null) { Runtime.trap("Post not found") };
+    };
+    if (not isGraphPost(postId)) {
+      Runtime.trap("Dislikes apply to graph posts only");
+    };
+    if (isBlockedBidirectional(caller, post.author)) {
+      Runtime.trap("Cannot interact with this user");
+    };
+    requireNotSelfVote(post, caller);
+    // Disliking clears a like: one vote per principal.
+    switch (postLikes.get(postId)) {
+      case (?m) { m.remove(caller) };
+      case (null) {};
+    };
+    getNatPrincipalMap(postDislikes, postId).add(caller, true);
+    maybeDeleteBranch(postId);
+  };
+
+  public shared ({ caller }) func undislikePost(postId : Nat) : async () {
+    requireAuth(caller);
+    switch (posts.get(postId)) {
+      case (null) { Runtime.trap("Post not found") };
+      case (?post) { requireNotSelfVote(post, caller) };
+    };
+    switch (postDislikes.get(postId)) {
+      case (?m) { m.remove(caller) };
+      case (null) {};
+    };
+    maybeDeleteBranch(postId);
   };
 
   public shared ({ caller }) func createReply(parentPostId : Nat, text : Text, mediaHash : ?Storage.ExternalBlob, mediaType : ?Text) : async PostResponse {
@@ -1207,8 +1643,63 @@ actor {
     indexPostHashtags(id, text);
     addNotification(parentPost.author, caller, #reply(parentPostId));
     notifyMentions(text, id, caller);
+    inheritGraphRef(parentPostId, id);
 
     toPostResponse(reply, ?caller);
+  };
+
+  // Every token on a node, newest first, with the node's aggregate weight.
+  public query ({ caller }) func getPostsByGraphNode(
+    graphId : Text,
+    nodeId : Text,
+    cursor : ?Nat,
+    limit : Nat,
+  ) : async PaginatedGraphPosts {
+    let effectiveLimit = if (limit == 0 or limit > 50) { 20 } else { limit };
+    let empty : PaginatedGraphPosts = {
+      posts = [];
+      nextCursor = null;
+      hasMore = false;
+      nodeWeight = 0;
+      tokenCount = 0;
+      contributionCount = 0;
+    };
+    let ids = switch (graphNodePosts.get(graphId)) {
+      case (null) { return empty };
+      case (?byNode) {
+        switch (byNode.get(nodeId)) {
+          case (null) { return empty };
+          case (?m) { m };
+        };
+      };
+    };
+
+    var total : Int = 0;
+    var tokens : Nat = 0;
+    var contributions : Nat = 0;
+    for ((id, _) in ids.entries()) {
+      switch (posts.get(id)) {
+        case (?p) {
+          tokens += 1;
+          total += postVoteWeight(id);
+          switch (p.postType) {
+            case (#original) { contributions += 1 };
+            case (_) {};
+          };
+        };
+        case (null) {};
+      };
+    };
+
+    let page = paginatePostIds(ids, caller, cursor, effectiveLimit);
+    {
+      posts = page.posts;
+      nextCursor = page.nextCursor;
+      hasMore = page.hasMore;
+      nodeWeight = if (total < 0) { 0 } else { total };
+      tokenCount = tokens;
+      contributionCount = contributions;
+    };
   };
 
   public query ({ caller }) func getReplies(postId : Nat, cursor : ?Nat, limit : Nat) : async PaginatedPosts {
@@ -1335,6 +1826,7 @@ actor {
     indexPostHashtags(id, text);
     addNotification(originalPost.author, caller, #quote(postId));
     notifyMentions(text, id, caller);
+    inheritGraphRef(postId, id);
 
     toPostResponse(quote, ?caller);
   };

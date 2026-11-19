@@ -20,6 +20,7 @@ import {
   Pencil,
   Quote,
   Repeat2,
+  ThumbsDown,
   Trash2,
 } from "lucide-react";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
@@ -28,6 +29,7 @@ import { usePost, useReplies } from "../hooks/useQueries";
 import { EDIT_DELETE_WINDOW_MS } from "../utils/constants";
 import { fromNanoseconds, getInitials } from "../utils/formatting";
 import { BackButton, useGoBack } from "./BackButton";
+import { CitationChip } from "./CitationChip";
 import { ComposePost } from "./ComposePost";
 import { DeletePostDialog } from "./DeletePostDialog";
 import { EditPostForm } from "./EditPostForm";
@@ -68,6 +70,7 @@ export function PostDetail() {
     postText: post?.text ?? "",
     isLikedByCurrentUser: post?.isLikedByCurrentUser ?? false,
     isRepostedByCurrentUser: post?.isRepostedByCurrentUser ?? false,
+    isDislikedByCurrentUser: post?.isDislikedByCurrentUser ?? false,
     onDeleteSuccess: goBack,
   });
 
@@ -129,7 +132,7 @@ export function PostDetail() {
   const createdDate = fromNanoseconds(post.createdAt);
   const isWithinWindow =
     Date.now() - createdDate.getTime() < EDIT_DELETE_WINDOW_MS;
-  const canModify = isOwnPost && isWithinWindow;
+  const canModify = isOwnPost && isWithinWindow && !post.graphRef;
   const initials = getInitials(post.authorDisplayName);
   const avatarUrl = post.authorProfilePictureHash
     ? post.authorProfilePictureHash.getDirectURL()
@@ -229,6 +232,7 @@ export function PostDetail() {
               text={post.text}
               className="mt-3 whitespace-pre-wrap break-words text-base"
             />
+            {post.graphRef && <CitationChip graphRef={post.graphRef} />}
             {mediaUrl && (
               <div className="mt-3 overflow-hidden border">
                 {post.mediaType === "video" ? (
@@ -357,6 +361,29 @@ export function PostDetail() {
               onAnimationEnd={() => actions.setLikeAnimating(false)}
             />
           </button>
+          {post.graphRef && (
+            <button
+              type="button"
+              className={cn(
+                "flex items-center gap-2 rounded-none p-2 transition-colors",
+                post.isDislikedByCurrentUser
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={actions.handleDislikeToggle}
+              disabled={actions.isDislikePending}
+              aria-label={
+                post.isDislikedByCurrentUser ? "Remove dislike" : "Dislike"
+              }
+            >
+              <ThumbsDown
+                className={cn(
+                  "h-5 w-5",
+                  post.isDislikedByCurrentUser && "fill-current",
+                )}
+              />
+            </button>
+          )}
         </div>
         <Separator className="my-3" />
       </div>

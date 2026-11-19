@@ -7,6 +7,18 @@ export type PostType =
   | { repost: bigint }
   | { quote: bigint };
 
+export interface GraphRef {
+  graphId: string;
+  graphName: string;
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  path: string;
+  attachedAt: bigint;
+  hiddenAt?: bigint;
+  tokenNodeId?: string;
+}
+
 export interface Post {
   id: bigint;
   author: Principal;
@@ -24,6 +36,12 @@ export interface Post {
   repostCount: bigint;
   isLikedByCurrentUser: boolean;
   isRepostedByCurrentUser: boolean;
+  graphRef?: GraphRef;
+  weight?: bigint;
+  dislikeCount?: bigint;
+  isDislikedByCurrentUser?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 export interface PaginatedPosts {

@@ -4,9 +4,11 @@ import { useAppStore } from "../stores/useAppStore";
 import { MAX_POST_LENGTH } from "../utils/constants";
 import {
   useDeletePost,
+  useDislikePost,
   useEditPost,
   useLikePost,
   useRepostPost,
+  useUndislikePost,
   useUndoRepost,
   useUnlikePost,
 } from "./useQueries";
@@ -17,6 +19,7 @@ interface UsePostActionsOptions {
   postText: string;
   isLikedByCurrentUser: boolean;
   isRepostedByCurrentUser: boolean;
+  isDislikedByCurrentUser: boolean;
   onDeleteSuccess?: () => void;
 }
 
@@ -26,12 +29,16 @@ export function usePostActions({
   postText,
   isLikedByCurrentUser,
   isRepostedByCurrentUser,
+  isDislikedByCurrentUser,
   onDeleteSuccess,
 }: UsePostActionsOptions) {
   const { mutate: editPost, isPending: isEditing } = useEditPost();
   const { mutate: deletePost, isPending: isDeleting } = useDeletePost();
   const { mutate: likePost, isPending: isLiking } = useLikePost();
   const { mutate: unlikePost, isPending: isUnliking } = useUnlikePost();
+  const { mutate: dislikePost, isPending: isDisliking } = useDislikePost();
+  const { mutate: undislikePost, isPending: isUndisliking } =
+    useUndislikePost();
   const { mutate: repostPost, isPending: isReposting } = useRepostPost();
   const { mutate: undoRepost, isPending: isUndoingRepost } = useUndoRepost();
   const startQuote = useAppStore((s) => s.startQuote);
@@ -95,6 +102,19 @@ export function usePostActions({
     }
   };
 
+  const handleDislikeToggle = () => {
+    if (isDislikedByCurrentUser) {
+      undislikePost(actionPostId, {
+        onError: () => toast.error("Failed to remove dislike"),
+      });
+    } else {
+      dislikePost(actionPostId, {
+        onError: (error) =>
+          toast.error(error.message || "Failed to dislike contribution"),
+      });
+    }
+  };
+
   const handleRepost = () => {
     if (isRepostedByCurrentUser) {
       undoRepost(actionPostId, {
@@ -113,6 +133,7 @@ export function usePostActions({
 
   const isLikePending = isLiking || isUnliking;
   const isRepostPending = isReposting || isUndoingRepost;
+  const isDislikePending = isDisliking || isUndisliking;
 
   return {
     isEditMode,
@@ -133,5 +154,7 @@ export function usePostActions({
     handleRepost,
     isRepostPending,
     handleQuote,
+    handleDislikeToggle,
+    isDislikePending,
   };
 }

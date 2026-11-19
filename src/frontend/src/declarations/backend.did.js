@@ -46,6 +46,14 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const GraphRefInput = IDL.Record({
+  'nodeId' : IDL.Text,
+  'path' : IDL.Text,
+  'graphId' : IDL.Text,
+  'nodeName' : IDL.Text,
+  'nodeType' : IDL.Text,
+  'graphName' : IDL.Text,
+});
 export const ExternalBlob = IDL.Vec(IDL.Nat8);
 export const PostType = IDL.Variant({
   'repost' : IDL.Nat,
@@ -54,9 +62,23 @@ export const PostType = IDL.Variant({
   'reply' : IDL.Nat,
 });
 export const Time = IDL.Int;
+export const GraphRef = IDL.Record({
+  'hiddenAt' : IDL.Opt(Time),
+  'nodeId' : IDL.Text,
+  'path' : IDL.Text,
+  'graphId' : IDL.Text,
+  'tokenNodeId' : IDL.Opt(IDL.Text),
+  'attachedAt' : Time,
+  'nodeName' : IDL.Text,
+  'nodeType' : IDL.Text,
+  'graphName' : IDL.Text,
+});
 export const PostResponse = IDL.Record({
   'id' : IDL.Nat,
+  'dislikeCount' : IDL.Nat,
+  'weight' : IDL.Opt(IDL.Int),
   'postType' : PostType,
+  'graphRef' : IDL.Opt(GraphRef),
   'authorUsername' : IDL.Text,
   'likeCount' : IDL.Nat,
   'isRepostedByCurrentUser' : IDL.Bool,
@@ -64,10 +86,13 @@ export const PostResponse = IDL.Record({
   'repostCount' : IDL.Nat,
   'createdAt' : Time,
   'text' : IDL.Text,
+  'canEdit' : IDL.Bool,
   'author' : IDL.Principal,
   'mediaHash' : IDL.Opt(ExternalBlob),
   'replyCount' : IDL.Nat,
   'mediaType' : IDL.Opt(IDL.Text),
+  'canDelete' : IDL.Bool,
+  'isDislikedByCurrentUser' : IDL.Bool,
   'editedAt' : IDL.Opt(Time),
   'authorDisplayName' : IDL.Text,
   'isLikedByCurrentUser' : IDL.Bool,
@@ -107,6 +132,14 @@ export const Notification = IDL.Record({
 export const PaginatedNotifications = IDL.Record({
   'hasMore' : IDL.Bool,
   'notifications' : IDL.Vec(Notification),
+  'nextCursor' : IDL.Opt(IDL.Nat),
+});
+export const PaginatedGraphPosts = IDL.Record({
+  'nodeWeight' : IDL.Int,
+  'hasMore' : IDL.Bool,
+  'contributionCount' : IDL.Nat,
+  'tokenCount' : IDL.Nat,
+  'posts' : IDL.Vec(PostResponse),
   'nextCursor' : IDL.Opt(IDL.Nat),
 });
 export const UserProfile = IDL.Record({
@@ -172,6 +205,11 @@ export const idlService = IDL.Service({
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'blockUser' : IDL.Func([IDL.Principal], [], []),
   'checkUsernameAvailability' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
+  'createGraphPost' : IDL.Func(
+      [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
+      [PostResponse],
+      [],
+    ),
   'createPost' : IDL.Func(
       [IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
       [PostResponse],
@@ -183,6 +221,7 @@ export const idlService = IDL.Service({
       [],
     ),
   'deletePost' : IDL.Func([IDL.Nat], [], []),
+  'dislikePost' : IDL.Func([IDL.Nat], [], []),
   'editPost' : IDL.Func([IDL.Nat, IDL.Text], [PostResponse], []),
   'followUser' : IDL.Func([IDL.Principal], [], []),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
@@ -212,6 +251,11 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getPost' : IDL.Func([IDL.Nat], [IDL.Opt(PostResponse)], ['query']),
+  'getPostsByGraphNode' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Opt(IDL.Nat), IDL.Nat],
+      [PaginatedGraphPosts],
+      ['query'],
+    ),
   'getPostsByHashtag' : IDL.Func(
       [IDL.Text, IDL.Opt(IDL.Nat), IDL.Nat],
       [PaginatedPosts],
@@ -277,6 +321,7 @@ export const idlService = IDL.Service({
     ),
   'setProfile' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
   'unblockUser' : IDL.Func([IDL.Principal], [], []),
+  'undislikePost' : IDL.Func([IDL.Nat], [], []),
   'undoRepost' : IDL.Func([IDL.Nat], [], []),
   'unfollowUser' : IDL.Func([IDL.Principal], [], []),
   'unlikePost' : IDL.Func([IDL.Nat], [], []),
@@ -326,6 +371,14 @@ export const idlFactory = ({ IDL }) => {
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
+  const GraphRefInput = IDL.Record({
+    'nodeId' : IDL.Text,
+    'path' : IDL.Text,
+    'graphId' : IDL.Text,
+    'nodeName' : IDL.Text,
+    'nodeType' : IDL.Text,
+    'graphName' : IDL.Text,
+  });
   const ExternalBlob = IDL.Vec(IDL.Nat8);
   const PostType = IDL.Variant({
     'repost' : IDL.Nat,
@@ -334,9 +387,23 @@ export const idlFactory = ({ IDL }) => {
     'reply' : IDL.Nat,
   });
   const Time = IDL.Int;
+  const GraphRef = IDL.Record({
+    'hiddenAt' : IDL.Opt(Time),
+    'nodeId' : IDL.Text,
+    'path' : IDL.Text,
+    'graphId' : IDL.Text,
+    'tokenNodeId' : IDL.Opt(IDL.Text),
+    'attachedAt' : Time,
+    'nodeName' : IDL.Text,
+    'nodeType' : IDL.Text,
+    'graphName' : IDL.Text,
+  });
   const PostResponse = IDL.Record({
     'id' : IDL.Nat,
+    'dislikeCount' : IDL.Nat,
+    'weight' : IDL.Opt(IDL.Int),
     'postType' : PostType,
+    'graphRef' : IDL.Opt(GraphRef),
     'authorUsername' : IDL.Text,
     'likeCount' : IDL.Nat,
     'isRepostedByCurrentUser' : IDL.Bool,
@@ -344,10 +411,13 @@ export const idlFactory = ({ IDL }) => {
     'repostCount' : IDL.Nat,
     'createdAt' : Time,
     'text' : IDL.Text,
+    'canEdit' : IDL.Bool,
     'author' : IDL.Principal,
     'mediaHash' : IDL.Opt(ExternalBlob),
     'replyCount' : IDL.Nat,
     'mediaType' : IDL.Opt(IDL.Text),
+    'canDelete' : IDL.Bool,
+    'isDislikedByCurrentUser' : IDL.Bool,
     'editedAt' : IDL.Opt(Time),
     'authorDisplayName' : IDL.Text,
     'isLikedByCurrentUser' : IDL.Bool,
@@ -387,6 +457,14 @@ export const idlFactory = ({ IDL }) => {
   const PaginatedNotifications = IDL.Record({
     'hasMore' : IDL.Bool,
     'notifications' : IDL.Vec(Notification),
+    'nextCursor' : IDL.Opt(IDL.Nat),
+  });
+  const PaginatedGraphPosts = IDL.Record({
+    'nodeWeight' : IDL.Int,
+    'hasMore' : IDL.Bool,
+    'contributionCount' : IDL.Nat,
+    'tokenCount' : IDL.Nat,
+    'posts' : IDL.Vec(PostResponse),
     'nextCursor' : IDL.Opt(IDL.Nat),
   });
   const UserProfile = IDL.Record({
@@ -449,6 +527,11 @@ export const idlFactory = ({ IDL }) => {
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'blockUser' : IDL.Func([IDL.Principal], [], []),
     'checkUsernameAvailability' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
+    'createGraphPost' : IDL.Func(
+        [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
+        [PostResponse],
+        [],
+      ),
     'createPost' : IDL.Func(
         [IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
         [PostResponse],
@@ -460,6 +543,7 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'deletePost' : IDL.Func([IDL.Nat], [], []),
+    'dislikePost' : IDL.Func([IDL.Nat], [], []),
     'editPost' : IDL.Func([IDL.Nat, IDL.Text], [PostResponse], []),
     'followUser' : IDL.Func([IDL.Principal], [], []),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
@@ -489,6 +573,11 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'getPost' : IDL.Func([IDL.Nat], [IDL.Opt(PostResponse)], ['query']),
+    'getPostsByGraphNode' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Opt(IDL.Nat), IDL.Nat],
+        [PaginatedGraphPosts],
+        ['query'],
+      ),
     'getPostsByHashtag' : IDL.Func(
         [IDL.Text, IDL.Opt(IDL.Nat), IDL.Nat],
         [PaginatedPosts],
@@ -554,6 +643,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'setProfile' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
     'unblockUser' : IDL.Func([IDL.Principal], [], []),
+    'undislikePost' : IDL.Func([IDL.Nat], [], []),
     'undoRepost' : IDL.Func([IDL.Nat], [], []),
     'unfollowUser' : IDL.Func([IDL.Principal], [], []),
     'unlikePost' : IDL.Func([IDL.Nat], [], []),

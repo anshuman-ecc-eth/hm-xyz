@@ -146,6 +146,11 @@ must never be implemented by synthesising graffiti.
   deleted token are removed
 - the rule is evaluated after dislike, undislike and unlike, since removing a
   like can cross the threshold
+- **a token that has been published to the app is not deletable, and pins
+  everything beneath it.** A branch containing any published token is never
+  removed. Permanence is the design: removal-from-view is an xyz-side concern
+  (`hiddenAt`), and the app token is immutable either way. Vote-deletion
+  therefore applies to xyz-only citations, not to published contributions.
 
 ### Phase 1 posts are xyz-only
 
@@ -183,14 +188,19 @@ to read, cite and write graphs from xyz.
    need a Caffeine support request, and *repointing* an origin orphans every
    existing account — II principals are per-origin and cannot be migrated.
    There are ~25 real principals and 10 published graphs on the app.
-4. **Node IDs are not paths.** `generateId` produces
-   `nodeType-name-creator-timestamp` (`app/main.mo:1465`), e.g.
-   `interpretationToken-Secured creditor claim-<principal>-<nanos>`. They contain
-   the title, spaces and the creator, so they are long and must be URL-encoded;
-   duplicate names are distinct IDs. The `@`-joined path form appears only in the
-   import matcher. A node's human path has to be built by walking `parentId`
-   (curation → swarm → location → lawEntity → interpEntity). Published graph IDs
-   are immutable snapshots (`published-<nanos>-<n>`), so pinning to one is safe.
+4. **Node IDs are opaque.** Use the `id` field from `/api/nodes` verbatim: never
+   parse it, never synthesise one, never build one from a name. Both shapes are
+   normal and live side by side — generated ids
+   (`nodeType-name-creator-timestamp`) for legacy `create*` nodes and curations,
+   and path-shaped ids (`Curation@Swarm@Location@s.1`) for nodes created by
+   publish or by an xyz write. A path-shaped id is still an exact key, not a name
+   lookup: the live data has distinct nodes named `SARFAESI ACT, 2002` and
+   `SARFAESI Act, 2002`, each with its own id, and the id selects exactly one.
+   Ids are long and contain spaces and `@`, so they must be URL-encoded. A node's
+   human path is display-only, built by walking `parentId` (curation → swarm →
+   location → lawEntity → interpEntity), and is never sent back to the app.
+   Published graph IDs are immutable snapshots (`published-<nanos>-<n>`), so
+   pinning to one is safe.
 5. **Queries cannot make outbound calls**, and hyvmind's HTTP API is a query.
    Any cross-canister authorization check is therefore unavailable on read paths.
 6. **`pluginBindings` / `getEffectiveUser` is not reusable as an identity link**:
@@ -222,6 +232,11 @@ to read, cite and write graphs from xyz.
   no cycles. Cache aggressively keyed on `(graphId, revision)` — `/api/graphs`
   carries `revision` and every extension bumps it, so per-graph payloads are
   fetched once per revision rather than once per session.
+- **Strip control characters before parsing.** The API emits raw
+  `\u0000`–`\u001f` bytes inside node content, and `/api/graphs/{id}` fails
+  `JSON.parse` outright on live data (`Bad control character in string literal`).
+  Every response body is sanitised before parsing; this is a hard requirement,
+  not defensive polish.
 - **Resolve the app's backend canister ID from `https://hyvmind.app/env.json`**
   with `4p5ty-yyaaa-aaaam-qfana-cai` as a fallback. Do not hardcode it.
 - **Follower-gating is dropped for reads and retained for writes.** One-way
@@ -254,7 +269,7 @@ type GraphRef = {
   nodeType : Text;        // "curation" | "swarm" | "location" | "lawEntity" | "interpEntity"
   path : Text;            // built from parentId, e.g. "Indian Securities Law › SARFAESI Act, 2002 › s.2(1)(z)"
   attachedAt : Time.Time;
-  archivedAt : ?Time.Time;  // reserved: governance, later; never read
+  hiddenAt : ?Time.Time;    // reserved: xyz-local visibility; never sent to the app
   tokenNodeId : ?Text;      // reserved: app interpEntity id once Phase 3 publishes it
 };
 
@@ -295,18 +310,20 @@ Frontend:
   wrapped in react-query, cached per `(graphId, revision)`; one fetch per graph,
   never per node.
 - Picker in `ComposePost` mirrors the app's own `{@` dropdown and its Public-page
-  fuzzy finder: five node types, `parentPath` in the app's `" @ "` idiom, type
-  dots, Fuse over name + path + `content` + attributes, arrows/enter/escape.
+  fuzzy finder: all five node types are searchable, but only `lawEntity` and
+  `interpEntity` are selectable — a token must hang off a law token, so a
+  citation of a curation, swarm or location has no legal materialisation. Type
+  dots, substring scoring over name + path + `content`, arrows/enter/escape.
 - **No inline citation syntax in post text.** A post has exactly one citation and
-  it is structural. Pasting a hyvmind.app node URL, or a `{Path @ Name}` string
-  copied from a note, resolves to the same ref.
-- Citation chip on `PostCard` / `PostDetail`; panel showing the node's `sources`,
-  `tags` and `customAttributes`.
+  it is structural.
+- Citation chip on `PostCard` / `PostDetail`, linking to the node page; sources
+  panel on the node page.
 - Store the name and path snapshot so a citation still renders meaningfully if the
   node later disappears — mark it "unresolved" rather than lying.
 - Node page at `/node/$graphId?node=<id>` — a query parameter, because node ids
   contain spaces and separators.
-- Label the weight "xyz weight" and keep graph weight separate.
+- Dislike button on tokens only; weight shown as "xyz weight", never summed with
+  graph weight.
 
 #### Phase 2 — principal link (both)
 
@@ -345,10 +362,14 @@ Writes are post-shaped: **one graph post creates exactly one interpretation
 token.** There is no standalone node or edge creation, and a write that stops at a
 curation, swarm or location is rejected.
 
-- Request: `title` (≤ 200), `content` (required, no media), `parentLaw` (existing
-  law id, or a new law included in `ancestors`), `ancestors` (one chain of new
-  nodes on the path to that law, no siblings), `citations` (0–1 in xyz; the app
-  accepts up to 20).
+- Request: `title` (1–200 chars, trimmed, **no `@`** — it becomes part of the
+  node id), `content` (1–20,000 chars, required, no media), `parentLaw` (existing
+  law id, or a new law included in `ancestors`), `ancestors` (0–4 new nodes on one
+  chain to that law, no siblings; each name 1–200 and no `@`; `tags` only on
+  swarms), `citations` (0–1 in xyz; the app accepts up to 20), and
+  `apiVersion = 1`. Oversize input is `#err(#malformed)`; a payload over 2 MB is
+  rejected at the transport layer, so we validate client-side and stay well under
+  ~1 MB.
 - `anchor = citations[0] ?? parentLaw`. The same expression must be used for any
   future weight target.
 - `writeId = "xyz:" + postId`, the only retry key. Same key and same payload
@@ -387,6 +408,8 @@ curation, swarm or location is rejected.
 - **Mirroring weights in the current scope.** The app's weight path is an
   unauthenticated voxel method, not a trustworthy vote channel. Mirroring needs a
   dedicated field and an allowlisted adjust method, never synthetic graffiti.
+- **Retracting a published token.** A token in the graph is immutable and has no
+  retraction path. Permanence is intentional; hiding is an xyz-side view concern.
 - **Standalone node or edge creation from xyz.** Containers exist only as the path
   to a token.
 - **Reusing `pluginBindings`.** Write-only, one-way, plugin-shaped.
@@ -425,9 +448,10 @@ interpretationTokens[], edges[], revision }`.
 `GET /api/nodes/{graphId}` → array of
 `{ id, name, type, parentId?, content?, creator, createdAt, tags[]?,
 attributes[{ key, weightedValues[{ value, weight }] }], sources[{ name, url }],
-customAttributes? }`. `content` exists only on `interpEntity`. The response
-carries `x-hyvmind-revision` (exposed via CORS); `/api/edges` and `/api/weights`
-carry the same header.
+customAttributes? }`. `content` exists only on `interpEntity`. Bodies contain raw
+control characters in `content` — strip Unicode category Cc before `JSON.parse`.
+The response carries `x-hyvmind-revision` (exposed via CORS); `/api/edges` and
+`/api/weights` carry the same header.
 
 `GET /api/edges/{graphId}` → cross-reference edges only
 `{ source, target, label, bidirectional }`.

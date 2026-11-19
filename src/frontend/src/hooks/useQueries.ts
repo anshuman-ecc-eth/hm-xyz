@@ -7,7 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { ExternalBlob } from "../backend";
+import type { ExternalBlob, GraphRefInput } from "../backend";
 import { createActor } from "../backend";
 import type { PaginatedPosts, Post, UserProfileResponse } from "../utils/types";
 
@@ -577,6 +577,7 @@ const POST_FEED_KEYS = [
   "postsByHashtag",
   "searchPosts",
   "replies",
+  "graphNodePosts",
 ];
 
 async function cancelPostFeedQueries(
@@ -932,5 +933,119 @@ export function useUndoRepost() {
     onSettled: (_data, _err, postId) => {
       invalidatePostFeedQueries(queryClient, postId);
     },
+  });
+}
+
+// ── Graph tokens ─────────────────────────────────────────────────────────────
+
+export function useCreateGraphPost() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      ref,
+      text,
+      mediaHash,
+      mediaType,
+    }: {
+      ref: GraphRefInput;
+      text: string;
+      mediaHash: ExternalBlob | null;
+      mediaType: string | null;
+    }) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.createGraphPost(ref, text, mediaHash, mediaType);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["globalFeed"] });
+      queryClient.invalidateQueries({ queryKey: ["homeFeed"] });
+      queryClient.invalidateQueries({ queryKey: ["userPosts"] });
+      queryClient.invalidateQueries({ queryKey: ["graphNodePosts"] });
+    },
+  });
+}
+
+export function useDislikePost() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (postId: bigint) => {
+      if (!actor) throw new Error("Actor not ready");
+      await actor.dislikePost(postId);
+    },
+    onMutate: async (postId) => {
+      await cancelPostFeedQueries(queryClient, postId);
+      const snapshots = snapshotPostFeedQueries(queryClient, postId);
+      updatePostInFeedCache(queryClient, postId, (post) => ({
+        ...post,
+        dislikeCount: (post.dislikeCount ?? 0n) + 1n,
+        isDislikedByCurrentUser: true,
+        isLikedByCurrentUser: false,
+        likeCount: post.isLikedByCurrentUser
+          ? post.likeCount > 0n
+            ? post.likeCount - 1n
+            : 0n
+          : post.likeCount,
+      }));
+      return { snapshots };
+    },
+    onError: (_err, _postId, context) => {
+      if (context?.snapshots)
+        restoreQuerySnapshots(queryClient, context.snapshots);
+    },
+    onSettled: (_data, _err, postId) =>
+      invalidatePostFeedQueries(queryClient, postId),
+  });
+}
+
+export function useUndislikePost() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (postId: bigint) => {
+      if (!actor) throw new Error("Actor not ready");
+      await actor.undislikePost(postId);
+    },
+    onMutate: async (postId) => {
+      await cancelPostFeedQueries(queryClient, postId);
+      const snapshots = snapshotPostFeedQueries(queryClient, postId);
+      updatePostInFeedCache(queryClient, postId, (post) => ({
+        ...post,
+        dislikeCount:
+          (post.dislikeCount ?? 0n) > 0n ? (post.dislikeCount ?? 0n) - 1n : 0n,
+        isDislikedByCurrentUser: false,
+      }));
+      return { snapshots };
+    },
+    onError: (_err, _postId, context) => {
+      if (context?.snapshots)
+        restoreQuerySnapshots(queryClient, context.snapshots);
+    },
+    onSettled: (_data, _err, postId) =>
+      invalidatePostFeedQueries(queryClient, postId),
+  });
+}
+
+export function usePostsByGraphNode(graphId: string, nodeId: string) {
+  const { actor, isFetching } = useActor(createActor);
+
+  return useInfiniteQuery({
+    queryKey: ["graphNodePosts", graphId, nodeId],
+    queryFn: async ({ pageParam }) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.getPostsByGraphNode(
+        graphId,
+        nodeId,
+        pageParam,
+        DEFAULT_PAGE_SIZE,
+      );
+    },
+    initialPageParam: null as bigint | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: !!actor && !isFetching && graphId.length > 0 && nodeId.length > 0,
+    refetchInterval: 15_000,
   });
 }
