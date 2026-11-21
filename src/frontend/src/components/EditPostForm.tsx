@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
-import { MAX_POST_LENGTH } from "../utils/constants";
 
 interface EditPostFormProps {
   editText: string;
@@ -29,19 +28,10 @@ export function EditPostForm({
         value={editText}
         onChange={(e) => onEditTextChange(e.target.value)}
         disabled={isEditing}
+        maxLength={20000}
         className={cn("resize-none", textareaClassName)}
       />
-      <div className="mt-2 flex items-center justify-between">
-        <span
-          className={cn(
-            "text-xs",
-            editText.length > MAX_POST_LENGTH
-              ? "text-destructive"
-              : "text-muted-foreground",
-          )}
-        >
-          {editText.length}/{MAX_POST_LENGTH}
-        </span>
+      <div className="mt-2 flex items-center justify-end">
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -54,11 +44,7 @@ export function EditPostForm({
           <Button
             size="sm"
             onClick={onSave}
-            disabled={
-              isEditing ||
-              editText.trim().length === 0 ||
-              editText.length > MAX_POST_LENGTH
-            }
+            disabled={isEditing || editText.trim().length === 0}
           >
             {isEditing && <Loader2 className="h-4 w-4 animate-spin" />}
             {isEditing ? "Saving..." : "Save"}

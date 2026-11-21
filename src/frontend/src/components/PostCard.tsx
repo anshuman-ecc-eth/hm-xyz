@@ -28,10 +28,12 @@ import { usePost } from "../hooks/useQueries";
 import { EDIT_DELETE_WINDOW_MS } from "../utils/constants";
 import { fromNanoseconds, getInitials } from "../utils/formatting";
 import type { Post, PostType } from "../utils/types";
+import { ChainChip } from "./ChainChip";
 import { CitationChip } from "./CitationChip";
 import { DeletePostDialog } from "./DeletePostDialog";
 import { EditPostForm } from "./EditPostForm";
 import { PostText } from "./PostText";
+import { PublicationGraph } from "./PublicationGraph";
 import { PublishToGraph } from "./PublishToGraph";
 
 interface PostCardProps {
@@ -109,8 +111,13 @@ export function PostCard({ post }: PostCardProps) {
   const createdDate = fromNanoseconds(contentPost.createdAt);
   const isWithinWindow =
     Date.now() - createdDate.getTime() < EDIT_DELETE_WINDOW_MS;
+  const chainLocked = !!actionPost.chain && !actionPost.graphRef?.tokenNodeId;
   const canModify =
-    isOwnPost && isWithinWindow && !contentPost.graphRef && !isRepost;
+    isOwnPost &&
+    isWithinWindow &&
+    !contentPost.graphRef &&
+    !contentPost.chain &&
+    !isRepost;
 
   const contentInitials = getInitials(contentPost.authorDisplayName);
   const contentAvatarUrl = contentPost.authorProfilePictureHash
@@ -303,10 +310,33 @@ export function PostCard({ post }: PostCardProps) {
                   className="mt-1.5 whitespace-pre-wrap break-words font-sans text-[15px] leading-[1.55]"
                 />
               )}
-              {contentPost.graphRef && (
-                <CitationChip graphRef={contentPost.graphRef} />
+              {contentPost.textTruncated && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    navigate({
+                      to: "/post/$id",
+                      params: { id: contentPost.id.toString() },
+                    });
+                  }}
+                  className="mt-1 font-mono text-[11px] text-primary underline-offset-2 hover:underline"
+                >
+                  See more
+                </button>
               )}
-              {contentPost.graphRef && isOwnPost && (
+              {contentPost.chain ? (
+                <ChainChip post={contentPost} />
+              ) : (
+                contentPost.graphRef && (
+                  <CitationChip graphRef={contentPost.graphRef} />
+                )
+              )}
+              {(contentPost.graphRef?.tokenNodeId || contentPost.chain) && (
+                <PublicationGraph post={contentPost} />
+              )}
+              {(contentPost.graphRef || contentPost.chain) && isOwnPost && (
                 <PublishToGraph post={contentPost} />
               )}
               {contentMediaUrl &&
@@ -433,17 +463,27 @@ export function PostCard({ post }: PostCardProps) {
                   }
                 }}
               >
-                <Link
-                  to="/post/$id"
-                  params={{ id: actionPost.id.toString() }}
-                  className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-primary"
-                  aria-label="Reply"
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  {actionPost.replyCount > 0n && (
-                    <span>{actionPost.replyCount.toString()}</span>
-                  )}
-                </Link>
+                {chainLocked ? (
+                  <span
+                    className="flex cursor-not-allowed items-center gap-1 text-sm text-muted-foreground/50"
+                    title="Publish this chain before replying"
+                    aria-disabled="true"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                  </span>
+                ) : (
+                  <Link
+                    to="/post/$id"
+                    params={{ id: actionPost.id.toString() }}
+                    className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-primary"
+                    aria-label="Reply"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    {actionPost.replyCount > 0n && (
+                      <span>{actionPost.replyCount.toString()}</span>
+                    )}
+                  </Link>
+                )}
                 <DropdownMenu onOpenChange={handleDropdownOpenChange}>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -473,7 +513,15 @@ export function PostCard({ post }: PostCardProps) {
                         ? "Undo repost"
                         : "Repost"}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleQuote}>
+                    <DropdownMenuItem
+                      onClick={handleQuote}
+                      disabled={chainLocked}
+                      title={
+                        chainLocked
+                          ? "Publish this chain before quoting"
+                          : undefined
+                      }
+                    >
                       <Quote className="h-4 w-4" />
                       Quote
                     </DropdownMenuItem>
@@ -505,7 +553,7 @@ export function PostCard({ post }: PostCardProps) {
                     <span>{actionPost.likeCount.toString()}</span>
                   )}
                 </button>
-                {actionPost.graphRef && (
+                {(actionPost.graphRef || actionPost.chain) && (
                   <button
                     type="button"
                     className={cn(
@@ -533,7 +581,7 @@ export function PostCard({ post }: PostCardProps) {
                     )}
                   </button>
                 )}
-                {actionPost.graphRef && (
+                {(actionPost.graphRef || actionPost.chain) && (
                   <span
                     className="font-mono text-[11px] tabular-nums text-muted-foreground"
                     title="xyz weight"

@@ -14,6 +14,25 @@ export interface AppLinkPreview {
     appPrincipal: Principal;
     displayName?: string;
 }
+export interface ChainInput {
+    start?: GraphRefInput;
+    levels: Array<ChainLevelInput>;
+}
+export interface ChainLevelInput {
+    name: string;
+    tags: Array<string>;
+    attributes: Array<[string, Array<string>]>;
+    sources: Array<XyzSourceRef>;
+    nodeType: string;
+}
+export interface ChainLevelView {
+    name: string;
+    nodeType: string;
+}
+export interface ChainView {
+    start?: GraphRefInput;
+    levels: Array<ChainLevelView>;
+}
 export type Error_ = {
     __kind__: "FrontendOriginsNotConfigured";
     FrontendOriginsNotConfigured: null;
@@ -149,6 +168,7 @@ export interface PostResponse {
     id: bigint;
     dislikeCount: bigint;
     weight?: bigint;
+    textTruncated: boolean;
     postType: PostType;
     graphRef?: GraphRef;
     authorUsername: string;
@@ -156,6 +176,7 @@ export interface PostResponse {
     isRepostedByCurrentUser: boolean;
     authorProfilePictureHash?: ExternalBlob;
     repostCount: bigint;
+    chain?: ChainView;
     createdAt: Time;
     text: string;
     canEdit: boolean;
@@ -348,6 +369,10 @@ export type XyzPreviewResult = {
         message: string;
     };
 };
+export interface XyzSourceRef {
+    url: string;
+    name: string;
+}
 export interface XyzWriteDraft {
     title?: string;
     costText: string;
@@ -374,6 +399,7 @@ export interface backendInterface {
     checkUsernameAvailability(username: string): Promise<boolean>;
     commitXyzWriteForPost(postId: bigint, expectedDigest: string): Promise<XyzCommitOutcome>;
     confirmAppLink(code: string): Promise<LinkResult>;
+    createChainPost(chain: ChainInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createGraphPost(ref: GraphRefInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createPost(text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createReply(parentPostId: bigint, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
@@ -387,6 +413,10 @@ export interface backendInterface {
     getFollowing(username: string, offset: bigint, limit: bigint): Promise<PaginatedFollows>;
     getGlobalFeed(cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
     getHomeFeed(cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
+    getLinkedBuzzBalance(): Promise<{
+        text: string;
+        units: bigint;
+    } | null>;
     getMyAppLink(): Promise<LinkState | null>;
     getNotifications(cursor: bigint | null, limit: bigint): Promise<PaginatedNotifications>;
     getPost(postId: bigint): Promise<PostResponse | null>;

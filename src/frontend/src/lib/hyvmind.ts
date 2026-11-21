@@ -37,6 +37,8 @@ export interface ApiNode {
   parentId?: string;
   content?: string;
   creator?: string;
+  /** u64 nanoseconds since the epoch. */
+  createdAt?: number;
   sources?: { name: string; url: string }[];
   attributes?: {
     key: string;

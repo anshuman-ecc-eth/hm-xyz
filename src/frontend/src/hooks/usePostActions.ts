@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAppStore } from "../stores/useAppStore";
-import { MAX_POST_LENGTH } from "../utils/constants";
 import {
   useDeletePost,
   useDislikePost,
@@ -60,7 +59,7 @@ export function usePostActions({
 
   const handleSaveEdit = () => {
     const trimmed = editText.trim();
-    if (!trimmed || trimmed.length > MAX_POST_LENGTH) return;
+    if (!trimmed || trimmed.length > 20_000) return;
     editPost(
       { postId, text: trimmed },
       {

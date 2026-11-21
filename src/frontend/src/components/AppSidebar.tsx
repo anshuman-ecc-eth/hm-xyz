@@ -88,7 +88,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
 
       <nav className="flex-1 py-2">
         <ul>
-          {NAV_ITEMS.map((item, index) => {
+          {NAV_ITEMS.map((item) => {
             const active = isNavActive(item.to, currentPath);
             return (
               <li key={item.to}>
@@ -103,9 +103,6 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                   )}
                   onClick={onNavigate}
                 >
-                  <span className="w-6 shrink-0 text-[10px] tracking-[0.08em] text-muted-foreground">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
                   <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   <span className="flex-1">{item.label}</span>
                   {item.to === "/notifications" &&

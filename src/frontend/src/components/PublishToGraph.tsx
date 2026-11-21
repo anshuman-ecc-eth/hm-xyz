@@ -8,7 +8,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Check, Copy, ExternalLink, Loader2, Upload } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { XyzPathCreator, XyzPlan } from "../backend";
 import {
@@ -17,14 +17,24 @@ import {
   useReconcileXyzWrite,
   useXyzWriteDraft,
 } from "../hooks/useQueries";
+import { useAppStore } from "../stores/useAppStore";
+import { formatNodeType } from "../utils/formatting";
 import type { Post } from "../utils/types";
 
 const TOP_UP_URL = "https://hyvmind.app/?settings=wallet&redeem=1";
+
+/**
+ * The app may or may not include the unit in its money strings. Normalise so
+ * the dialog never prints "12 BUZZ BUZZ".
+ */
+const withBuzz = (text: string) =>
+  /\bbuzz\b/i.test(text) ? text : `${text} BUZZ`;
 
 type Blocked = {
   message: string;
   reason: string;
   pathCreators: XyzPathCreator[];
+  plan: XyzPlan;
 };
 
 function CopyId({ value }: { value: string }) {
@@ -53,9 +63,9 @@ function PlanSummary({ plan }: { plan: XyzPlan }) {
           this write
         </span>
         <span className="text-[12px]">
-          {plan.costText} BUZZ{" "}
+          {withBuzz(plan.costText)}{" "}
           <span className="text-muted-foreground">
-            · you have {plan.balanceText}
+            · you have {withBuzz(plan.balanceText)}
           </span>
         </span>
       </div>
@@ -81,26 +91,40 @@ function BlockedBy({ blocked }: { blocked: Blocked }) {
   return (
     <div className="space-y-2">
       <p className="text-[11px] leading-relaxed">{blocked.message}</p>
-      <ul className="space-y-1.5 border px-3 py-2">
-        {blocked.pathCreators.map((creator) => (
-          <li key={creator.appPrincipal.toText()} className="text-[11px]">
-            <span className="font-medium">
-              {creator.displayName ?? "unnamed"}
-            </span>
-            <span className="text-muted-foreground">
-              {creator.linked
-                ? " — you and they don't follow each other yet."
-                : " — hasn't linked a hyvmind.xyz account."}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {blocked.pathCreators.length > 0 ? (
+        <ul className="space-y-1.5 border px-3 py-2">
+          {blocked.pathCreators.map((creator) => (
+            <li key={creator.appPrincipal.toText()} className="text-[11px]">
+              <span className="font-medium">
+                {creator.displayName ?? "unnamed"}
+              </span>
+              <span className="text-muted-foreground">
+                {creator.linked
+                  ? " — you and they don't follow each other yet."
+                  : " — hasn't linked a hyvmind.xyz account."}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <ul className="space-y-1 border px-3 py-2">
+          {blocked.plan.lines.slice(0, 4).map((line) => (
+            <li
+              key={line}
+              className="text-[11px] leading-relaxed text-muted-foreground"
+            >
+              {line}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
 export function PublishToGraph({ post }: { post: Post }) {
   const graphRef = post.graphRef;
+  const chain = post.chain;
   const publishedId = graphRef?.tokenNodeId;
   const [open, setOpen] = useState(false);
 
@@ -109,6 +133,9 @@ export function PublishToGraph({ post }: { post: Post }) {
   const commit = useCommitXyzWrite();
   const reconcile = useReconcileXyzWrite();
 
+  const pendingPublishPostId = useAppStore((s) => s.pendingPublishPostId);
+  const setPendingPublishPostId = useAppStore((s) => s.setPendingPublishPostId);
+
   const [plan, setPlan] = useState<XyzPlan | null>(null);
   const [blocked, setBlocked] = useState<Blocked | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -116,6 +143,7 @@ export function PublishToGraph({ post }: { post: Post }) {
   const [insufficient, setInsufficient] = useState(false);
   const [retryAt, setRetryAt] = useState<number | null>(null);
   const [pendingDigest, setPendingDigest] = useState<string | null>(null);
+  const autoPreviewed = useRef(false);
 
   useEffect(() => {
     if (retryAt == null) return;
@@ -128,32 +156,17 @@ export function PublishToGraph({ post }: { post: Post }) {
     return () => clearTimeout(t);
   }, [retryAt]);
 
-  if (!graphRef) return null;
+  // A just-created citation post asks its card to open this dialog. Clear the
+  // request either way so it cannot re-open on the next render.
+  useEffect(() => {
+    if (pendingPublishPostId == null || pendingPublishPostId !== post.id) {
+      return;
+    }
+    setPendingPublishPostId(null);
+    if (!publishedId) setOpen(true);
+  }, [pendingPublishPostId, post.id, publishedId, setPendingPublishPostId]);
 
-  if (publishedId) {
-    return (
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-        <span className="uppercase tracking-[0.12em]">published</span>
-        <code className="max-w-[16rem] truncate border px-1.5 py-0.5">
-          {publishedId}
-        </code>
-        <CopyId value={publishedId} />
-      </div>
-    );
-  }
-
-  const reset = () => {
-    setPlan(null);
-    setBlocked(null);
-    setNotice(null);
-    setNeedsReconcile(false);
-    setInsufficient(false);
-    setPendingDigest(null);
-    setRetryAt(null);
-  };
-
-  const handlePreview = () => {
-    reset();
+  const runPreview = useCallback(() => {
     preview.mutate(post.id, {
       onSuccess: (res) => {
         switch (res.__kind__) {
@@ -182,6 +195,47 @@ export function PublishToGraph({ post }: { post: Post }) {
       },
       onError: () => setNotice("Could not reach hyvmind.app."),
     });
+  }, [post.id, preview.mutate]);
+
+  // Opening the dialog is enough: the preview is read-only, so fetch the cost
+  // once per opening and show a single confirm.
+  useEffect(() => {
+    if (!open || publishedId) return;
+    if (autoPreviewed.current) return;
+    if (!draft.data?.canPublish) return;
+    if (plan || blocked || notice) return;
+    autoPreviewed.current = true;
+    runPreview();
+  }, [open, publishedId, draft.data, plan, blocked, notice, runPreview]);
+
+  if (!graphRef && !chain) return null;
+
+  if (publishedId) {
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+        <span className="uppercase tracking-[0.12em]">published</span>
+        <code className="max-w-[16rem] truncate border px-1.5 py-0.5">
+          {publishedId}
+        </code>
+        <CopyId value={publishedId} />
+      </div>
+    );
+  }
+
+  const reset = () => {
+    setPlan(null);
+    setBlocked(null);
+    setNotice(null);
+    setNeedsReconcile(false);
+    setInsufficient(false);
+    setPendingDigest(null);
+    setRetryAt(null);
+  };
+
+  const handlePreview = () => {
+    reset();
+    autoPreviewed.current = true;
+    runPreview();
   };
 
   const handleCommit = (digest: string) => {
@@ -193,7 +247,7 @@ export function PublishToGraph({ post }: { post: Post }) {
           setPendingDigest(null);
           switch (res.__kind__) {
             case "ok":
-              toast.success(`Published for ${res.ok.costText} BUZZ`);
+              toast.success(`Published for ${withBuzz(res.ok.costText)}`);
               setOpen(false);
               reset();
               break;
@@ -249,7 +303,7 @@ export function PublishToGraph({ post }: { post: Post }) {
       onSuccess: (res) => {
         switch (res.__kind__) {
           case "ok":
-            toast.success(`Published for ${res.ok.costText} BUZZ`);
+            toast.success(`Published for ${withBuzz(res.ok.costText)}`);
             setOpen(false);
             reset();
             break;
@@ -270,6 +324,8 @@ export function PublishToGraph({ post }: { post: Post }) {
   };
 
   const draftBlocked = draft.data != null && !draft.data.canPublish;
+  const canRetry =
+    notice != null && !blocked && !insufficient && !needsReconcile;
   const busy =
     preview.isPending ||
     commit.isPending ||
@@ -282,7 +338,10 @@ export function PublishToGraph({ post }: { post: Post }) {
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) reset();
+          if (!next) {
+            reset();
+            autoPreviewed.current = false;
+          }
         }}
       >
         <DialogTrigger asChild>
@@ -292,7 +351,7 @@ export function PublishToGraph({ post }: { post: Post }) {
             className="inline-flex items-center gap-1 border px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
           >
             <Upload className="h-3 w-3" />
-            publish
+            publish to graph
           </button>
         </DialogTrigger>
         <DialogContent
@@ -301,15 +360,31 @@ export function PublishToGraph({ post }: { post: Post }) {
         >
           <DialogHeader>
             <DialogTitle className="text-[13px] font-normal">
-              Publish this interpretation
+              {chain ? "Publish this chain" : "Publish this interpretation"}
             </DialogTitle>
             <DialogDescription className="text-[11px] leading-relaxed">
-              This writes a permanent token into the graph. It cannot be edited
-              or removed afterwards.
+              {chain
+                ? `This creates ${chain.levels.length + 1} new nodes in one permanent write. It cannot be edited or removed afterwards.`
+                : "This writes a permanent token into the graph. It cannot be edited or removed afterwards."}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
+            {chain && (
+              <div className="space-y-1 border px-3 py-2">
+                <div className="flex items-baseline gap-2">
+                  <span className="w-16 shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    chain
+                  </span>
+                  <span className="min-w-0 flex-1 break-words text-[11px] text-muted-foreground">
+                    {[
+                      ...(chain.start ? [chain.start.nodeName] : []),
+                      ...chain.levels.map((level) => `new ${level.name}`),
+                    ].join(" › ")}
+                  </span>
+                </div>
+              </div>
+            )}
             {draft.isLoading && (
               <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" /> reading post…
@@ -323,7 +398,7 @@ export function PublishToGraph({ post }: { post: Post }) {
                     type
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[11px]">
-                    {draft.data.nodeType}
+                    {formatNodeType(draft.data.nodeType)}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-2">
@@ -339,7 +414,7 @@ export function PublishToGraph({ post }: { post: Post }) {
                     cost
                   </span>
                   <span className="text-[11px]">
-                    about {draft.data.costText} BUZZ
+                    about {withBuzz(draft.data.costText)}
                   </span>
                 </div>
               </div>
@@ -388,19 +463,28 @@ export function PublishToGraph({ post }: { post: Post }) {
                 {commit.isPending && (
                   <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                 )}
-                Publish for {plan.costText}
+                Publish for {withBuzz(plan.costText)}
+              </Button>
+            ) : blocked || draftBlocked ? null : canRetry ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-none px-3 text-[11px]"
+                onClick={handlePreview}
+                disabled={busy}
+              >
+                Try again
               </Button>
             ) : (
               <Button
                 size="sm"
                 className="h-8 rounded-none px-3 text-[11px]"
-                onClick={handlePreview}
-                disabled={busy || draftBlocked || draft.data == null}
+                disabled
               >
-                {preview.isPending && (
+                {(preview.isPending || draft.isLoading) && (
                   <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                 )}
-                Review cost
+                Checking cost…
               </Button>
             )}
             {needsReconcile && (

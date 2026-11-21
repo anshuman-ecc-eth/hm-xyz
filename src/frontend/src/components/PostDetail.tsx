@@ -29,12 +29,14 @@ import { usePost, useReplies } from "../hooks/useQueries";
 import { EDIT_DELETE_WINDOW_MS } from "../utils/constants";
 import { fromNanoseconds, getInitials } from "../utils/formatting";
 import { BackButton, useGoBack } from "./BackButton";
+import { ChainChip } from "./ChainChip";
 import { CitationChip } from "./CitationChip";
 import { ComposePost } from "./ComposePost";
 import { DeletePostDialog } from "./DeletePostDialog";
 import { EditPostForm } from "./EditPostForm";
 import { PostCard } from "./PostCard";
 import { PostText } from "./PostText";
+import { PublicationGraph } from "./PublicationGraph";
 import { PublishToGraph } from "./PublishToGraph";
 
 const routeApi = getRouteApi("/post/$id");
@@ -133,7 +135,8 @@ export function PostDetail() {
   const createdDate = fromNanoseconds(post.createdAt);
   const isWithinWindow =
     Date.now() - createdDate.getTime() < EDIT_DELETE_WINDOW_MS;
-  const canModify = isOwnPost && isWithinWindow && !post.graphRef;
+  const canModify =
+    isOwnPost && isWithinWindow && !post.graphRef && !post.chain;
   const initials = getInitials(post.authorDisplayName);
   const avatarUrl = post.authorProfilePictureHash
     ? post.authorProfilePictureHash.getDirectURL()
@@ -233,8 +236,17 @@ export function PostDetail() {
               text={post.text}
               className="mt-3 whitespace-pre-wrap break-words text-base"
             />
-            {post.graphRef && <CitationChip graphRef={post.graphRef} />}
-            {post.graphRef && isOwnPost && <PublishToGraph post={post} />}
+            {post.chain ? (
+              <ChainChip post={post} />
+            ) : (
+              post.graphRef && <CitationChip graphRef={post.graphRef} />
+            )}
+            {(post.graphRef?.tokenNodeId || post.chain) && (
+              <PublicationGraph post={post} />
+            )}
+            {(post.graphRef || post.chain) && isOwnPost && (
+              <PublishToGraph post={post} />
+            )}
             {mediaUrl && (
               <div className="mt-3 overflow-hidden border">
                 {post.mediaType === "video" ? (
@@ -363,7 +375,7 @@ export function PostDetail() {
               onAnimationEnd={() => actions.setLikeAnimating(false)}
             />
           </button>
-          {post.graphRef && (
+          {(post.graphRef || post.chain) && (
             <button
               type="button"
               className={cn(

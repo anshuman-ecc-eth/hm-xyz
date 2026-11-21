@@ -66,6 +66,50 @@ actor {
     path : Text;
   };
 
+  // ── Chains ──────────────────────────────────────────────────────────────────
+  // A chain post creates 1-4 new ancestors below an existing curation, swarm or
+  // location, or a whole new curation when `start` is null. The interpretation
+  // token itself is still the post; the chain is the path to it. Names are
+  // normalised server-side: trimmed, no '@', no control characters.
+
+  type ChainLevelInput = {
+    nodeType : Text;
+    name : Text;
+    tags : [Text];
+    attributes : [(Text, [Text])];
+    sources : [XyzSourceRef];
+  };
+
+  type ChainInput = {
+    start : ?GraphRefInput;
+    levels : [ChainLevelInput];
+  };
+
+  type ChainLevel = {
+    nodeType : Text;
+    name : Text;
+    tags : [Text];
+    attributes : [(Text, [Text])];
+    sources : [XyzSourceRef];
+  };
+
+  type ChainSpec = {
+    start : ?GraphRefInput;
+    levels : [ChainLevel];
+  };
+
+  // What a feed actually needs: the path, not the metadata. Keeping attributes
+  // and sources out of every response bounds a page of chain posts.
+  type ChainLevelView = {
+    nodeType : Text;
+    name : Text;
+  };
+
+  type ChainView = {
+    start : ?GraphRefInput;
+    levels : [ChainLevelView];
+  };
+
   type PostResponse = {
     id : Nat;
     author : Principal;
@@ -85,6 +129,10 @@ actor {
     isRepostedByCurrentUser : Bool;
     // Graph token fields. `graphRef` is null for regular posts.
     graphRef : ?GraphRef;
+    // Present when this post declares new graph ancestors (a chain post).
+    chain : ?ChainView;
+    // Feeds return a bounded preview of very long posts; the detail call does not.
+    textTruncated : Bool;
     weight : ?Int;                    // xyz weight: 1 + likes + reposts - dislikes
     dislikeCount : Nat;
     isDislikedByCurrentUser : Bool;
@@ -321,6 +369,11 @@ actor {
   // ── Graph tokens ────────────────────────────────────────────────────────────
   // Presence in postGraphRefs is what makes a post a graph post (a token).
   let postGraphRefs : Map.Map<Nat, GraphRef>;
+  // Chain posts declare their new ancestors here. Presence marks a token even
+  // before it has a graphRef (a brand-new curation has no graph id yet).
+  let postChains : Map.Map<Nat, ChainSpec>;
+  // Total UTF-8 bytes of post text per account, so long posts stay bounded.
+  let userTextBytes : Map.Map<Principal, Nat>;
   // graphId -> nodeId -> postId. Nested rather than a "graphId#nodeId" key,
   // because both ids are opaque text that can contain any separator.
   let graphNodePosts : Map.Map<Text, Map.Map<Text, Map.Map<Nat, Bool>>>;
@@ -338,7 +391,13 @@ actor {
   // guarantees a single charge per post.
   transient let writeInFlight = Map.empty<Nat, Bool>();
 
-  transient let maxPostLength : Nat = 280;
+  transient let maxPostLength : Nat = 20_000;
+  transient let maxChainName : Nat = 120;
+  transient let maxChainLevels : Nat = 4;
+  transient let maxTextBytesPerUser : Nat = 20_000_000;
+  // Feeds carry a bounded preview so a page of long posts cannot exceed the
+  // 2 MB canister response limit. getPost returns the full body.
+  transient let feedPreviewChars : Nat = 800;
   transient let editDeleteWindowNanos : Int = 900_000_000_000;
   transient let maxPostsPerUser : Nat = 10_000;
   transient let maxNotificationsPerUser : Nat = 50;
@@ -590,6 +649,237 @@ actor {
     };
   };
 
+  func isChainPost(postId : Nat) : Bool {
+    switch (postChains.get(postId)) {
+      case (?_) { true };
+      case (null) { false };
+    };
+  };
+
+  // A token is either a citation of an existing node or a chain that will
+  // create its own node when published.
+  func isTokenPost(postId : Nat) : Bool {
+    isGraphPost(postId) or isChainPost(postId);
+  };
+
+  // A reply or quote inherits the parent's node. A chain post has no node until
+  // it is published, so children must wait for that.
+  func requireChainPublishedForChild(parentPostId : Nat) {
+    switch (postChains.get(parentPostId)) {
+      case (null) {};
+      case (?_) {
+        let published = switch (postGraphRefs.get(parentPostId)) {
+          case (?ref) { ref.tokenNodeId != null };
+          case (null) { false };
+        };
+        if (not published) {
+          Runtime.trap("Publish this chain before replying to or quoting it");
+        };
+      };
+    };
+  };
+
+  // ── Text bounds ─────────────────────────────────────────────────────────────
+
+  func textBytes(t : Text) : Nat {
+    t.encodeUtf8().size();
+  };
+
+  func requireTextQuota(caller : Principal, delta : Nat) {
+    let used = switch (userTextBytes.get(caller)) {
+      case (?n) { n };
+      case (null) { 0 };
+    };
+    if (delta > maxTextBytesPerUser or used + delta > maxTextBytesPerUser) {
+      Runtime.trap("This account's text storage is full. Delete older posts to free space.");
+    };
+  };
+
+  func addTextBytes(caller : Principal, delta : Nat) {
+    if (delta == 0) { return };
+    let used = switch (userTextBytes.get(caller)) {
+      case (?n) { n };
+      case (null) { 0 };
+    };
+    userTextBytes.add(caller, used + delta);
+  };
+
+  func removeTextBytes(caller : Principal, delta : Nat) {
+    if (delta == 0) { return };
+    let used = switch (userTextBytes.get(caller)) {
+      case (?n) { n };
+      case (null) { 0 };
+    };
+    let next = if (delta >= used) { 0 } else { used - delta };
+    userTextBytes.add(caller, next);
+  };
+
+  func truncateChars(t : Text, max : Nat) : Text {
+    if (t.size() <= max) { return t };
+    Text.fromArray(t.toArray().sliceToArray(0, max));
+  };
+
+  func joinPath(parts : [Text]) : Text {
+    var out = "";
+    var index = 0;
+    for (part in parts.values()) {
+      if (index > 0) { out #= " › " };
+      out #= part;
+      index += 1;
+    };
+    out;
+  };
+
+  // Feeds return a bounded preview; the detail view returns the full body.
+  func previewText(t : Text) : (Text, Bool) {
+    if (t.size() <= feedPreviewChars) { (t, false) } else {
+      (truncateChars(t, feedPreviewChars), true);
+    };
+  };
+
+  // ── Chain validation ────────────────────────────────────────────────────────
+
+  func normalizeChainName(name : Text) : Text {
+    let t = name.trim(#char ' ');
+    if (t.size() == 0 or t.size() > maxChainName) {
+      Runtime.trap("Each new node needs a name of 1-" # maxChainName.toText() # " characters");
+    };
+    if (t.contains(#text "@")) { Runtime.trap("Names cannot contain '@'") };
+    if (t.contains(#text "›")) { Runtime.trap("Names cannot contain '›'") };
+    for (c in t.toArray().values()) {
+      if (c.toNat32() < 32) { Runtime.trap("Names cannot contain control characters") };
+    };
+    t;
+  };
+
+  func normalizeTag(tag : Text) : ?Text {
+    let t = tag.trim(#char ' ');
+    if (t.size() == 0) { return null };
+    if (t.size() > 50 or t.contains(#text "@") or t.contains(#text "›")) {
+      Runtime.trap("Tags must be 1-50 characters and cannot contain '@' or '›'");
+    };
+    for (c in t.toArray().values()) {
+      if (c.toNat32() < 32) { Runtime.trap("Tags cannot contain control characters") };
+    };
+    ?t;
+  };
+
+  func normalizeAttributes(input : [(Text, [Text])]) : [(Text, [Text])] {
+    if (input.size() > 20) { Runtime.trap("At most 20 attributes per node") };
+    let out = List.empty<(Text, [Text])>();
+    for ((key, values) in input.values()) {
+      let k = key.trim(#char ' ');
+      if (k.size() == 0 or k.size() > 100) {
+        Runtime.trap("Attribute keys must be 1-100 characters");
+      };
+      if (k.contains(#text "@") or k.contains(#text "›")) {
+        Runtime.trap("Attribute keys cannot contain '@' or '›'");
+      };
+      var count = 0;
+      let cleaned = List.empty<Text>();
+      for (v in values.values()) {
+        let t = v.trim(#char ' ');
+        if (t.size() > 0) {
+          if (t.size() > 200) { Runtime.trap("Attribute values must be 200 characters or fewer") };
+          cleaned.add(t);
+          count += 1;
+        };
+      };
+      if (count > 20) { Runtime.trap("At most 20 values per attribute") };
+      out.add((k, cleaned.toArray()));
+    };
+    out.toArray();
+  };
+
+  func normalizeSources(input : [XyzSourceRef]) : [XyzSourceRef] {
+    if (input.size() > 20) { Runtime.trap("At most 20 sources per node") };
+    input.map(
+      func(s : XyzSourceRef) : XyzSourceRef {
+        let name = s.name.trim(#char ' ');
+        let url = s.url.trim(#char ' ');
+        if (name.size() == 0 or name.size() > 200) { Runtime.trap("Source names must be 1-200 characters") };
+        if (url.size() == 0 or url.size() > 500) { Runtime.trap("Source URLs must be 1-500 characters") };
+        { name; url };
+      }
+    );
+  };
+
+  func validateChain(input : ChainInput) : ChainSpec {
+    let start = input.start;
+    let startType = switch (start) {
+      case (null) { "" };
+      case (?s) {
+        validateGraphRef(s);
+        if (not isKnownNodeType(s.nodeType)) { Runtime.trap("Unknown start node type") };
+        s.nodeType;
+      };
+    };
+    let expected : [Text] = switch (startType) {
+      case ("") { ["curation", "swarm", "location", "lawEntity"] };
+      case ("curation") { ["swarm", "location", "lawEntity"] };
+      case ("swarm") { ["location", "lawEntity"] };
+      case ("location") { ["lawEntity"] };
+      case (_) {
+        Runtime.trap("A chain starts from a curation, swarm or location, or from a new graph");
+      };
+    };
+    if (input.levels.size() > maxChainLevels) {
+      Runtime.trap("A chain has at most " # maxChainLevels.toText() # " new levels");
+    };
+    if (input.levels.size() != expected.size()) {
+      Runtime.trap("This chain needs " # expected.size().toText() # " new level(s)");
+    };
+    let levels = List.empty<ChainLevel>();
+    var index = 0;
+    for (level in input.levels.values()) {
+      if (level.nodeType != expected[index]) {
+        Runtime.trap("Invalid chain level: expected " # expected[index]);
+      };
+      var tags : [Text] = [];
+      if (level.nodeType == "swarm") {
+        if (level.tags.size() > 10) { Runtime.trap("At most 10 tags per swarm") };
+        let collected = List.empty<Text>();
+        for (tag in level.tags.values()) {
+          switch (normalizeTag(tag)) {
+            case (?t) { collected.add(t) };
+            case (null) {};
+          };
+        };
+        tags := collected.toArray();
+      } else if (level.tags.size() > 0) {
+        Runtime.trap("Tags are only allowed on swarms");
+      };
+      levels.add({
+        nodeType = level.nodeType;
+        name = normalizeChainName(level.name);
+        tags;
+        attributes = normalizeAttributes(level.attributes);
+        sources = normalizeSources(level.sources);
+      });
+      index += 1;
+    };
+    { start; levels = levels.toArray() };
+  };
+
+  func chainNodeCost(t : Text) : Nat {
+    switch (t) {
+      case ("curation") { 10 };
+      case ("swarm") { 20 };
+      case ("location") { 30 };
+      case ("lawEntity") { 40 };
+      case (_) { 0 };
+    };
+  };
+
+  // The app charges the token (50 tenths) plus every newly created ancestor.
+  func chainCost(spec : ChainSpec) : Nat {
+    var cost = 50;
+    for (level in spec.levels.values()) {
+      cost += chainNodeCost(level.nodeType);
+    };
+    cost;
+  };
+
   // A reply or a quote of a token becomes a token on the same node.
   func inheritGraphRef(parentPostId : Nat, childId : Nat) {
     switch (postGraphRefs.get(parentPostId)) {
@@ -712,6 +1002,7 @@ actor {
       case (?p) {
         posts.remove(id);
         decrementPostCount(p.author);
+        removeTextBytes(p.author, textBytes(p.text));
         removePostHashtags(id, p.text);
         switch (p.postType) {
           case (#reply(parentId)) {
@@ -746,13 +1037,14 @@ actor {
       };
       case (null) {};
     };
+    postChains.remove(id);
   };
 
   // Vote-deletes a token and its branch, unless the branch contains a token
   // already published to the app: those are permanent, and pin everything
   // beneath them.
   func maybeDeleteBranch(postId : Nat) {
-    if (not isGraphPost(postId)) { return };
+    if (not isTokenPost(postId)) { return };
     if (not shouldDeleteOnVote(postId)) { return };
     switch (gatherBranch(postId)) {
       case (null) {};
@@ -825,6 +1117,7 @@ actor {
       XyzPostInput,
     ) -> async XyzCommitOutcome;
     getXyzWrite : (Principal, Text) -> async ?XyzCommitOk;
+    getXyzBuzzBalance : (Principal) -> async ?{ units : Int; text : Text };
     // Only the field we need; Candid record width-subtyping makes the rest of
     // GraphData irrelevant. The largest published graph is ~37 KB of JSON.
     getPublishedSourceGraph : (Text) -> async ?{
@@ -930,7 +1223,7 @@ actor {
 
   // The write payload is a pure function of the stored post and graph: no
   // field comes from the client, so `#conflict` cannot happen by user action.
-  func buildWriteInput(post : Post, ref : GraphRef) : async {
+  func buildWriteInput(post : Post, ref : ?GraphRef) : async {
     #ok : XyzPostInput;
     #err : Text;
   } {
@@ -944,13 +1237,71 @@ actor {
       return #err("A published interpretation needs text.");
     };
 
-    let parentLaw : XyzRef = if (ref.nodeType == "lawEntity") {
+    // A chain post creates its own path: 1-4 ancestors and a new law anchor.
+    // The refs are local labels resolved by the app's ancestor map.
+    switch (postChains.get(post.id)) {
+      case (?spec) {
+        let ancestors = List.empty<XyzPathNode>();
+        var index = 0;
+        for (level in spec.levels.values()) {
+          let parentRef : ?XyzRef = if (index == 0) {
+            // The first new level hangs from the existing start node, if any.
+            switch (spec.start) {
+              case (?start) {
+                ?{ ref = start.nodeId; nodeType = ?start.nodeType };
+              };
+              case (null) { null };
+            };
+          } else {
+            ?{
+              ref = "xyz:" # (index - 1).toText();
+              // A previous *new* ancestor is resolved through the ancestor map,
+              // so its type is null; a type here would mean "existing node".
+              nodeType = null;
+            };
+          };
+          ancestors.add({
+            ref = "xyz:" # index.toText();
+            nodeType = level.nodeType;
+            name = level.name;
+            parentRef;
+            tags = level.tags;
+            attributes = level.attributes;
+            sources = level.sources;
+          });
+          index += 1;
+        };
+        let newAncestors = ancestors.toArray();
+        if (newAncestors.size() == 0) {
+          return #err("This chain has no new nodes.");
+        };
+        return #ok({
+          apiVersion = 1;
+          title;
+          content = post.text;
+          parentLaw = {
+            ref = newAncestors[newAncestors.size() - 1].ref;
+            nodeType = null;
+          };
+          ancestors = newAncestors;
+          citations = [];
+        });
+      };
+      case (null) {};
+    };
+
+    let anchor = switch (ref) {
+      case (?r) { r };
+      case (null) { return #err("Only graph posts can be published.") };
+    };
+
+    let parentLaw : XyzRef = if (anchor.nodeType == "lawEntity") {
       // The cited law is the anchor. Citing it would be a hierarchyEdge block.
-      { ref = ref.nodeId; nodeType = ?"lawEntity" };
-    } else if (ref.nodeType == "interpEntity") {
+      { ref = anchor.nodeId; nodeType = ?"lawEntity" };
+    } else if (anchor.nodeType == "interpEntity") {
       let graph = try {
         let app = appWrite();
-        await (with timeout = writeReadTimeout) app.getPublishedSourceGraph(ref.graphId);
+        await (with timeout = writeReadTimeout) app.getPublishedSourceGraph(anchor.graphId);
       } catch (_e) {
         return #err("Could not read the graph to find the enclosing law.");
       };
@@ -960,7 +1311,7 @@ actor {
       };
       var lawId : ?Text = null;
       for (t in tokens.values()) {
-        if (t.id == ref.nodeId) { lawId := ?t.parentLawTokenId };
+        if (t.id == anchor.nodeId) { lawId := ?t.parentLawTokenId };
       };
       switch (lawId) {
         case (?id) { { ref = id; nodeType = ?"lawEntity" } };
@@ -972,9 +1323,9 @@ actor {
       return #err("Only law tokens and interpretations can be published.");
     };
 
-    let citations : [XyzCitation] = if (ref.nodeType == "interpEntity") {
+    let citations : [XyzCitation] = if (anchor.nodeType == "interpEntity") {
       [{
-        target = { ref = ref.nodeId; nodeType = ?"interpEntity" };
+        target = { ref = anchor.nodeId; nodeType = ?"interpEntity" };
         edgeLabel = "cites";
         bidirectional = false;
       }]
@@ -990,9 +1341,16 @@ actor {
     });
   };
 
-  // A post is writable by its author, once, while it is a graph post.
+  func publishedToken(ref : ?GraphRef) : ?Text {
+    switch (ref) {
+      case (?r) { r.tokenNodeId };
+      case (null) { null };
+    };
+  };
+
+  // A post is writable by its author, once, while it is a token post.
   func writablePost(postId : Nat, caller : Principal) : {
-    #ok : (Post, GraphRef);
+    #ok : (Post, ?GraphRef);
     #err : Text;
   } {
     let post = switch (posts.get(postId)) {
@@ -1000,32 +1358,73 @@ actor {
       case (null) { return #err("Post not found") };
     };
     if (post.author != caller) { return #err("Only the author can publish this post") };
-    let ref = switch (postGraphRefs.get(postId)) {
-      case (?r) { r };
-      case (null) { return #err("Only graph posts can be published") };
-    };
-    if (not isCitableType(ref.nodeType)) {
-      return #err("Only law tokens and interpretations can be published");
+    let ref = postGraphRefs.get(postId);
+    let chain = postChains.get(postId);
+    switch (ref, chain) {
+      case (null, null) { return #err("Only graph posts can be published") };
+      case (?r, null) {
+        if (not isCitableType(r.nodeType)) {
+          return #err("Only law tokens and interpretations can be published");
+        };
+      };
+      case (_, ?_) {};
     };
     #ok((post, ref));
   };
 
-  func markPublished(postId : Nat, ref : GraphRef, interpId : Text) {
+  func markPublished(postId : Nat, ref : ?GraphRef, ok : XyzCommitOk) {
     // The post could have been vote-deleted while the commit was in flight;
     // never resurrect a graph ref for a post that no longer exists.
     if (posts.get(postId) == null) { return };
-    let updated : GraphRef = {
-      graphId = ref.graphId;
-      graphName = ref.graphName;
-      nodeId = ref.nodeId;
-      nodeName = ref.nodeName;
-      nodeType = ref.nodeType;
-      path = ref.path;
-      attachedAt = ref.attachedAt;
-      hiddenAt = ref.hiddenAt;
-      tokenNodeId = ?interpId;
+    switch (ref) {
+      case (?existing) {
+        let updated : GraphRef = {
+          graphId = existing.graphId;
+          graphName = existing.graphName;
+          nodeId = existing.nodeId;
+          nodeName = existing.nodeName;
+          nodeType = existing.nodeType;
+          path = existing.path;
+          attachedAt = existing.attachedAt;
+          hiddenAt = existing.hiddenAt;
+          tokenNodeId = ?ok.interpNodeId;
+        };
+        postGraphRefs.add(postId, updated);
+      };
+      case (null) {
+        // A brand-new curation: the token it created is now this post's node.
+        let pathNames = ok.path;
+        let leaf = if (pathNames.size() == 0) { "" } else {
+          pathNames[pathNames.size() - 1];
+        };
+        let graphName = switch (postChains.get(postId)) {
+          case (?spec) {
+            switch (spec.start) {
+              case (?start) { start.graphName };
+              case (null) {
+                if (spec.levels.size() > 0) { spec.levels[0].name } else { leaf };
+              };
+            };
+          };
+          case (null) { leaf };
+        };
+        let created : GraphRef = {
+          graphId = ok.publishedGraphId;
+          graphName;
+          nodeId = ok.interpNodeId;
+          nodeName = leaf;
+          nodeType = "interpEntity";
+          // Display-only: keep it within the ref validation bound even for a
+          // maximum-length chain.
+          path = truncateChars(joinPath(pathNames), 600);
+          attachedAt = Time.now();
+          hiddenAt = null;
+          tokenNodeId = ?ok.interpNodeId;
+        };
+        postGraphRefs.add(postId, created);
+        getGraphNodeMap(ok.publishedGraphId, ok.interpNodeId).add(postId, true);
+      };
     };
-    postGraphRefs.add(postId, updated);
   };
 
   func addNotification(recipient : Principal, actor_ : Principal, notificationType : NotificationType) {
@@ -1178,7 +1577,7 @@ actor {
     };
   };
 
-  func toPostResponse(post : Post, caller : ?Principal) : PostResponse {
+  func toPostResponse(post : Post, caller : ?Principal, preview : Bool) : PostResponse {
     let authorProfile = userProfiles.get(post.author);
     let likes = postLikes.get(post.id);
     let likeCount = switch (likes) {
@@ -1215,9 +1614,22 @@ actor {
 
     // ── Graph token fields ──
     let graphRef = postGraphRefs.get(post.id);
+    let chain : ?ChainView = switch (postChains.get(post.id)) {
+      case (?spec) {
+        ?{
+          start = spec.start;
+          levels = spec.levels.map(
+            func(level : ChainLevel) : ChainLevelView {
+              { nodeType = level.nodeType; name = level.name };
+            }
+          );
+        };
+      };
+      case (null) { null };
+    };
     let isToken = switch (graphRef) {
       case (?_) { true };
-      case (null) { false };
+      case (null) { isChainPost(post.id) };
     };
     let dislikes = postDislikes.get(post.id);
     let dislikeCount = switch (dislikes) {
@@ -1239,6 +1651,11 @@ actor {
     };
     let withinWindow = Time.now() - post.createdAt <= editDeleteWindowNanos;
     let mutable = isAuthor and not isToken and withinWindow;
+    let (responseText, textTruncated) = if (preview) {
+      previewText(post.text);
+    } else {
+      (post.text, false);
+    };
 
     {
       id = post.id;
@@ -1255,7 +1672,7 @@ actor {
         case (?p) { p.profilePictureHash };
         case (null) { null };
       };
-      text = post.text;
+      text = responseText;
       mediaHash = post.mediaHash;
       mediaType = post.mediaType;
       postType = post.postType;
@@ -1267,6 +1684,8 @@ actor {
       isLikedByCurrentUser = isLiked;
       isRepostedByCurrentUser = isReposted;
       graphRef;
+      chain;
+      textTruncated;
       weight = if (isToken) {
         ?(1 + likeCount.toInt() + repostCount.toInt() - dislikeCount.toInt())
       } else { null };
@@ -1286,7 +1705,7 @@ actor {
     for ((_, post) in posts.reverseEntriesFrom(Int.abs(startInt - 1))) {
       if (predicate(post)) {
         if (buf.size() < effectiveLimit) {
-          buf.add(toPostResponse(post, caller));
+          buf.add(toPostResponse(post, caller, true));
         } else {
           let arr = buf.toArray();
           return {
@@ -1360,7 +1779,7 @@ actor {
             if (not isAnon and isBlockedBidirectional(caller, post.author)) {
               // skip
             } else if (resultBuf.size() < effectiveLimit) {
-              resultBuf.add(toPostResponse(post, c));
+              resultBuf.add(toPostResponse(post, c, true));
             } else {
               foundExtra := true;
             };
@@ -1537,8 +1956,9 @@ actor {
       Runtime.trap("Post must contain text or media");
     };
     if (text.size() > maxPostLength) {
-      Runtime.trap("Post text must be 280 characters or fewer");
+      Runtime.trap("Post is too long (20,000 characters max)");
     };
+    requireTextQuota(caller, textBytes(text));
 
     let now = Time.now();
     let id = nextPostId;
@@ -1556,11 +1976,12 @@ actor {
     };
 
     posts.add(id, post);
+    addTextBytes(caller, textBytes(text));
     incrementPostCount(caller);
     indexPostHashtags(id, text);
     notifyMentions(text, id, caller);
 
-    toPostResponse(post, ?caller);
+    toPostResponse(post, ?caller, false);
   };
 
   // Creates one interpretation token: a post plus its immutable citation.
@@ -1582,8 +2003,9 @@ actor {
       Runtime.trap("Post must contain text or media");
     };
     if (text.size() > maxPostLength) {
-      Runtime.trap("Post text must be 280 characters or fewer");
+      Runtime.trap("Post is too long (20,000 characters max)");
     };
+    requireTextQuota(caller, textBytes(text));
 
     let now = Time.now();
     let id = nextPostId;
@@ -1601,6 +2023,7 @@ actor {
     };
 
     posts.add(id, post);
+    addTextBytes(caller, textBytes(text));
     incrementPostCount(caller);
     indexPostHashtags(id, text);
     notifyMentions(text, id, caller);
@@ -1619,7 +2042,78 @@ actor {
     postGraphRefs.add(id, graphRef);
     getGraphNodeMap(ref.graphId, ref.nodeId).add(id, true);
 
-    toPostResponse(post, ?caller);
+    toPostResponse(post, ?caller, false);
+  };
+
+  // A chain post is still one interpretation token. The 1-4 new nodes are only
+  // the path to it, which is the only way the app permits containers to exist.
+  public shared ({ caller }) func createChainPost(
+    chain : ChainInput,
+    text : Text,
+    mediaHash : ?Storage.ExternalBlob,
+    mediaType : ?Text,
+  ) : async PostResponse {
+    requireAuth(caller);
+    validateMedia(mediaHash, mediaType);
+    let spec = validateChain(chain);
+    requirePostCapNotReached(caller);
+    switch (userProfiles.get(caller)) {
+      case (null) { Runtime.trap("Must create profile before posting") };
+      case (?_) {};
+    };
+    if (text.size() == 0 and mediaHash == null) {
+      Runtime.trap("Post must contain text or media");
+    };
+    if (text.size() > maxPostLength) {
+      Runtime.trap("Post is too long (20,000 characters max)");
+    };
+    requireTextQuota(caller, textBytes(text));
+
+    let now = Time.now();
+    let id = nextPostId;
+    nextPostId += 1;
+
+    let post : Post = {
+      id;
+      author = caller;
+      text;
+      mediaHash;
+      mediaType;
+      postType = #original;
+      createdAt = now;
+      editedAt = null;
+    };
+
+    posts.add(id, post);
+    addTextBytes(caller, textBytes(text));
+    incrementPostCount(caller);
+    indexPostHashtags(id, text);
+    notifyMentions(text, id, caller);
+
+    postChains.add(id, spec);
+
+    // An extension chain already has a graph and node to link to. A brand-new
+    // curation has neither until the app creates it on publish.
+    switch (spec.start) {
+      case (?start) {
+        let graphRef : GraphRef = {
+          graphId = start.graphId;
+          graphName = start.graphName;
+          nodeId = start.nodeId;
+          nodeName = start.nodeName;
+          nodeType = start.nodeType;
+          path = start.path;
+          attachedAt = now;
+          hiddenAt = null;
+          tokenNodeId = null;
+        };
+        postGraphRefs.add(id, graphRef);
+        getGraphNodeMap(start.graphId, start.nodeId).add(id, true);
+      };
+      case (null) {};
+    };
+
+    toPostResponse(post, ?caller, false);
   };
 
   public query ({ caller }) func getPost(postId : Nat) : async ?PostResponse {
@@ -1630,7 +2124,7 @@ actor {
         if (not isAnon and isBlockedBidirectional(caller, post.author)) {
           null;
         } else {
-          ?toPostResponse(post, c);
+          ?toPostResponse(post, c, false);
         };
       };
       case (null) { null };
@@ -1640,7 +2134,7 @@ actor {
   public shared ({ caller }) func editPost(postId : Nat, text : Text) : async PostResponse {
     requireAuth(caller);
     if (text.size() > maxPostLength) {
-      Runtime.trap("Post text must be 280 characters or fewer");
+      Runtime.trap("Post is too long (20,000 characters max)");
     };
 
     let post = switch (posts.get(postId)) {
@@ -1655,6 +2149,14 @@ actor {
     };
     if (isGraphPost(postId)) {
       Runtime.trap("Graph posts cannot be edited");
+    };
+    if (isChainPost(postId)) {
+      Runtime.trap("Chain posts cannot be edited");
+    };
+    let oldBytes = textBytes(post.text);
+    let newBytes = textBytes(text);
+    if (newBytes > oldBytes) {
+      requireTextQuota(caller, newBytes - oldBytes);
     };
     let now = Time.now();
     if (now - post.createdAt > editDeleteWindowNanos) {
@@ -1674,8 +2176,13 @@ actor {
 
     removePostHashtags(postId, post.text);
     posts.add(postId, updated);
+    if (newBytes > oldBytes) {
+      addTextBytes(caller, newBytes - oldBytes);
+    } else {
+      removeTextBytes(caller, oldBytes - newBytes);
+    };
     indexPostHashtags(postId, text);
-    toPostResponse(updated, ?caller);
+    toPostResponse(updated, ?caller, false);
   };
 
   public shared ({ caller }) func deletePost(postId : Nat) : async () {
@@ -1688,7 +2195,7 @@ actor {
     if (post.author != caller) {
       Runtime.trap("Cannot delete another user's post");
     };
-    if (isGraphPost(postId)) {
+    if (isTokenPost(postId)) {
       Runtime.trap("Graph posts cannot be deleted");
     };
     let now = Time.now();
@@ -1698,6 +2205,7 @@ actor {
 
     posts.remove(postId);
     decrementPostCount(caller);
+    removeTextBytes(caller, textBytes(post.text));
     removePostHashtags(postId, post.text);
     postLikes.remove(postId);
     postDislikes.remove(postId);
@@ -1978,7 +2486,7 @@ actor {
       case (?p) { p };
       case (null) { Runtime.trap("Post not found") };
     };
-    if (not isGraphPost(postId)) {
+    if (not isTokenPost(postId)) {
       Runtime.trap("Dislikes apply to graph posts only");
     };
     if (isBlockedBidirectional(caller, post.author)) {
@@ -2026,8 +2534,10 @@ actor {
       Runtime.trap("Reply must contain text or media");
     };
     if (text.size() > maxPostLength) {
-      Runtime.trap("Reply text must be 280 characters or fewer");
+      Runtime.trap("Reply is too long (20,000 characters max)");
     };
+    requireTextQuota(caller, textBytes(text));
+    requireChainPublishedForChild(parentPostId);
 
     let now = Time.now();
     let id = nextPostId;
@@ -2045,6 +2555,7 @@ actor {
     };
 
     posts.add(id, reply);
+    addTextBytes(caller, textBytes(text));
     incrementPostCount(caller);
     getPostReplies(parentPostId).add(id, true);
     indexPostHashtags(id, text);
@@ -2052,7 +2563,7 @@ actor {
     notifyMentions(text, id, caller);
     inheritGraphRef(parentPostId, id);
 
-    toPostResponse(reply, ?caller);
+    toPostResponse(reply, ?caller, false);
   };
 
   // Every token on a node, newest first, with the node's aggregate weight.
@@ -2274,15 +2785,36 @@ actor {
       case (null) { return null };
     };
     if (post.author != caller) { return null };
-    let ref = switch (postGraphRefs.get(postId)) {
-      case (?r) { r };
-      case (null) { return null };
+    let ref = postGraphRefs.get(postId);
+    let chain = postChains.get(postId);
+    switch (ref, chain) {
+      case (null, null) { return null };
+      case (_) {};
+    };
+    let tokenNodeId = publishedToken(ref);
+    let nodeType = switch (chain) {
+      case (?_) { "interpEntity" };
+      case (null) {
+        switch (ref) {
+          case (?r) { r.nodeType };
+          case (null) { "" };
+        };
+      };
+    };
+    let citable = switch (chain) {
+      case (?_) { true };
+      case (null) {
+        switch (ref) {
+          case (?r) { isCitableType(r.nodeType) };
+          case (null) { false };
+        };
+      };
     };
     let title = deriveTitle(post.text);
     let linked = linkByXyz.get(caller) != null;
-    let reason : ?Text = if (ref.tokenNodeId != null) {
+    let reason : ?Text = if (tokenNodeId != null) {
       ?"This post is already published.";
-    } else if (not isCitableType(ref.nodeType)) {
+    } else if (not citable) {
       ?"Only law tokens and interpretations can be published.";
     } else if (post.text.size() == 0) {
       ?"A published interpretation needs text.";
@@ -2293,17 +2825,20 @@ actor {
     } else {
       null;
     };
-    let cost = xyzCostTenths(ref.nodeType);
+    let cost = switch (chain) {
+      case (?spec) { chainCost(spec) };
+      case (null) { xyzCostTenths(nodeType) };
+    };
     ?{
       postId;
       writeId = "xyz:" # postId.toText();
       title;
-      nodeType = ref.nodeType;
+      nodeType;
       costTenths = cost;
       costText = formatTenths(cost);
       canPublish = reason == null;
       reason;
-      tokenNodeId = ref.tokenNodeId;
+      tokenNodeId;
     };
   };
 
@@ -2316,7 +2851,7 @@ actor {
       case (#err(m)) { return #err({ kind = #malformed; message = m }) };
     };
     let (post, ref) = pair;
-    switch (ref.tokenNodeId) {
+    switch (publishedToken(ref)) {
       case (?_) {
         return #err({ kind = #malformed; message = "This post is already published." });
       };
@@ -2358,7 +2893,7 @@ actor {
       case (#err(m)) { return #err({ kind = #malformed; message = m }) };
     };
     let (post, ref) = pair;
-    switch (ref.tokenNodeId) {
+    switch (publishedToken(ref)) {
       case (?id) { return #alreadyPublished({ interpNodeId = id }) };
       case (null) {};
     };
@@ -2394,13 +2929,29 @@ actor {
       };
       switch (result) {
         case (#ok(ok)) {
-          markPublished(postId, ref, ok.interpNodeId);
+          markPublished(postId, ref, ok);
           #ok(ok);
         };
         case (_) { result };
       };
     } finally {
       releaseWriteLock(postId);
+    };
+  };
+
+  // The app exposes the linked account's balance only to the xyz backend. A
+  // query cannot await another canister, so this has to be a shared method.
+  public shared ({ caller }) func getLinkedBuzzBalance() : async ?{
+    units : Int;
+    text : Text;
+  } {
+    requireAuth(caller);
+    if (linkByXyz.get(caller) == null) { return null };
+    try {
+      let app = appWrite();
+      await (with timeout = writeReadTimeout) app.getXyzBuzzBalance(caller);
+    } catch (_e) {
+      null;
     };
   };
 
@@ -2415,7 +2966,7 @@ actor {
       case (#err(m)) { return #err({ kind = #malformed; message = m }) };
     };
     let (_, ref) = pair;
-    switch (ref.tokenNodeId) {
+    switch (publishedToken(ref)) {
       case (?id) { return #alreadyPublished({ interpNodeId = id }) };
       case (null) {};
     };
@@ -2437,7 +2988,7 @@ actor {
     };
     switch (remote) {
       case (?ok) {
-        markPublished(postId, ref, ok.interpNodeId);
+        markPublished(postId, ref, ok);
         #ok(ok);
       };
       case (null) {
@@ -2505,7 +3056,7 @@ actor {
     getMap(repostIndex, caller).add(postId, id);
     addNotification(originalPost.author, caller, #repost(postId));
 
-    toPostResponse(repost, ?caller);
+    toPostResponse(repost, ?caller, false);
   };
 
   public shared ({ caller }) func undoRepost(postId : Nat) : async () {
@@ -2550,8 +3101,10 @@ actor {
       Runtime.trap("Quote must contain text or media");
     };
     if (text.size() > maxPostLength) {
-      Runtime.trap("Quote text must be 280 characters or fewer");
+      Runtime.trap("Quote is too long (20,000 characters max)");
     };
+    requireTextQuota(caller, textBytes(text));
+    requireChainPublishedForChild(postId);
 
     let now = Time.now();
     let id = nextPostId;
@@ -2569,13 +3122,14 @@ actor {
     };
 
     posts.add(id, quote);
+    addTextBytes(caller, textBytes(text));
     incrementPostCount(caller);
     indexPostHashtags(id, text);
     addNotification(originalPost.author, caller, #quote(postId));
     notifyMentions(text, id, caller);
     inheritGraphRef(postId, id);
 
-    toPostResponse(quote, ?caller);
+    toPostResponse(quote, ?caller, false);
   };
 
   public query ({ caller }) func searchPosts(searchText : Text, cursor : ?Nat, limit : Nat) : async PaginatedPosts {

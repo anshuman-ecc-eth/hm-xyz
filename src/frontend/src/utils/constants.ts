@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
 
-export const MAX_POST_LENGTH = 280;
 export const EDIT_DELETE_WINDOW_MS = 15 * 60 * 1000;
 
 export const TAB_TRIGGER_CLASS = cn(

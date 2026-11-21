@@ -120,6 +120,22 @@ A graph post in xyz is one interpretation token. It is created at the last level
 of the hierarchy, never as a container: writing a curation, swarm or location is
 only possible as an ancestor on the path to the token.
 
+### Chains
+
+A post may also declare the path to its token: 1–4 new ancestors below an
+existing curation, swarm or location, or an entirely new curation. This is still
+one interpretation token — the containers exist only as its path, which is the
+only way the app permits them to be created. The write is atomic: every node and
+the single BUZZ charge land in one message. A new curation creates a new
+published graph (revision 1); extending an existing one bumps its revision. The
+app's prices apply: 1.0 curation + 2.0 swarm + 3.0 location + 4.0 law + 5.0
+token, so a five-node chain is 15.0 BUZZ.
+
+Composer: **Cite → New chain**. When the account is linked and has enough BUZZ,
+the same click creates and publishes the chain; otherwise the post is kept as an
+unpublished proposal. Replies and quotes wait until it is published. Post text
+is capped at 20,000 characters so every post remains publishable.
+
 ### Weight
 
 Two unrelated numbers, always labelled separately and **never summed**:
@@ -428,11 +444,13 @@ prevents a double charge, because the app's idempotency is on `(writeId, digest)
 but not concurrency-safe. That lock also makes a branch with a write in flight
 undeletable, and `markPublished` refuses to resurrect a purged post.
 
-Two facts worth carrying forward: **no production xyz write has ever been
-committed** (every graph sits at `revision: 0`, `xyzWriteCount: 0`), so the first
-one deserves a coordinated window; and `/?settings=wallet&redeem=1` redeems a
-secret code from the text game — there is no card top-up, so the `#insufficient`
-path says so instead of promising a purchase.
+Two facts worth carrying forward: **one production xyz write has landed** —
+`AI and Copyright` is at `revision: 1`, `xyzWriteCount: 1`, and the token is a
+single interpretation under an existing law (`ancestors = []`). The ancestor
+path is exercised by chain posts now, but the first five-node write still
+deserves a coordinated window. And `/?settings=wallet&redeem=1` redeems a secret
+code from the text game — there is no card top-up, so the `#insufficient` path
+says so instead of promising a purchase.
 
 #### Phase 4 — deep links
 

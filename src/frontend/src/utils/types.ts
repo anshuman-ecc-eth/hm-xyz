@@ -1,5 +1,5 @@
 import type { Principal } from "@icp-sdk/core/principal";
-import type { ExternalBlob } from "../backend";
+import type { ChainView, ExternalBlob } from "../backend";
 
 export type PostType =
   | { original: null }
@@ -37,6 +37,8 @@ export interface Post {
   isLikedByCurrentUser: boolean;
   isRepostedByCurrentUser: boolean;
   graphRef?: GraphRef;
+  chain?: ChainView;
+  textTruncated?: boolean;
   weight?: bigint;
   dislikeCount?: bigint;
   isDislikedByCurrentUser?: boolean;

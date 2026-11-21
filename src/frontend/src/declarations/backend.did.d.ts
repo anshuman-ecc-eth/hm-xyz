@@ -15,6 +15,22 @@ export interface AppLinkPreview {
   'appPrincipal' : Principal,
   'displayName' : [] | [string],
 }
+export interface ChainInput {
+  'start' : [] | [GraphRefInput],
+  'levels' : Array<ChainLevelInput>,
+}
+export interface ChainLevelInput {
+  'name' : string,
+  'tags' : Array<string>,
+  'attributes' : Array<[string, Array<string>]>,
+  'sources' : Array<XyzSourceRef>,
+  'nodeType' : string,
+}
+export interface ChainLevelView { 'name' : string, 'nodeType' : string }
+export interface ChainView {
+  'start' : [] | [GraphRefInput],
+  'levels' : Array<ChainLevelView>,
+}
 export type Error = { 'FrontendOriginsNotConfigured' : null } |
   {
     'MixedSsoSources' : {
@@ -104,6 +120,7 @@ export interface PostResponse {
   'id' : bigint,
   'dislikeCount' : bigint,
   'weight' : [] | [bigint],
+  'textTruncated' : boolean,
   'postType' : PostType,
   'graphRef' : [] | [GraphRef],
   'authorUsername' : string,
@@ -111,6 +128,7 @@ export interface PostResponse {
   'isRepostedByCurrentUser' : boolean,
   'authorProfilePictureHash' : [] | [ExternalBlob],
   'repostCount' : bigint,
+  'chain' : [] | [ChainView],
   'createdAt' : Time,
   'text' : string,
   'canEdit' : boolean,
@@ -233,6 +251,7 @@ export type XyzPreviewResult = {
   } |
   { 'throttled' : { 'retryAfterMs' : bigint } } |
   { 'ready' : { 'plan' : XyzPlan, 'message' : string } };
+export interface XyzSourceRef { 'url' : string, 'name' : string }
 export interface XyzWriteDraft {
   'title' : [] | [string],
   'costText' : string,
@@ -282,6 +301,10 @@ export interface _SERVICE {
   'checkUsernameAvailability' : ActorMethod<[string], boolean>,
   'commitXyzWriteForPost' : ActorMethod<[bigint, string], XyzCommitOutcome>,
   'confirmAppLink' : ActorMethod<[string], LinkResult>,
+  'createChainPost' : ActorMethod<
+    [ChainInput, string, [] | [ExternalBlob], [] | [string]],
+    PostResponse
+  >,
   'createGraphPost' : ActorMethod<
     [GraphRefInput, string, [] | [ExternalBlob], [] | [string]],
     PostResponse
@@ -304,6 +327,10 @@ export interface _SERVICE {
   'getFollowing' : ActorMethod<[string, bigint, bigint], PaginatedFollows>,
   'getGlobalFeed' : ActorMethod<[[] | [bigint], bigint], PaginatedPosts>,
   'getHomeFeed' : ActorMethod<[[] | [bigint], bigint], PaginatedPosts>,
+  'getLinkedBuzzBalance' : ActorMethod<
+    [],
+    [] | [{ 'text' : string, 'units' : bigint }]
+  >,
   'getMyAppLink' : ActorMethod<[], [] | [LinkState]>,
   'getNotifications' : ActorMethod<
     [[] | [bigint], bigint],

@@ -5,6 +5,7 @@ import { getRouteApi } from "@tanstack/react-router";
 import { Link2, Loader2 } from "lucide-react";
 import { useHyvmindGraphs, useHyvmindNodes } from "../hooks/useHyvmind";
 import { usePostsByGraphNode } from "../hooks/useQueries";
+import { formatNodeType } from "../utils/formatting";
 import { BackButton } from "./BackButton";
 import { PostCard } from "./PostCard";
 
@@ -53,7 +54,7 @@ export function NodePage() {
           <div className="space-y-3">
             <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
               <Link2 className="h-3 w-3" />
-              <span>{node.type}</span>
+              <span>{formatNodeType(node.type)}</span>
               <span>·</span>
               <span>xyz weight {(first?.nodeWeight ?? 0n).toString()}</span>
               <span>·</span>

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   type GraphMeta,
   type ResolvedNode,
@@ -38,6 +38,30 @@ export function useHyvmindNodes(graphId: string | null) {
     staleTime: STALE_MS,
     refetchOnWindowFocus: false,
     retry: 1,
+  });
+}
+
+/**
+ * Loads several graphs' nodes in parallel. Used by the activity rail, where the
+ * cited graphs are known only at runtime; keys match `useHyvmindNodes`, so the
+ * cache is shared with the node page.
+ */
+export function useHyvmindNodesMany(graphIds: string[]) {
+  const graphs = useHyvmindGraphs();
+
+  return useQueries({
+    queries: graphIds.map((graphId) => ({
+      queryKey: ["hyvmind", "nodes", graphId],
+      queryFn: async () => {
+        const graph = graphs.data?.find((g) => g.id === graphId);
+        if (!graph) throw new Error("Unknown graph");
+        return loadGraphNodes(graph);
+      },
+      enabled: !!graphs.data,
+      staleTime: STALE_MS,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    })),
   });
 }
 

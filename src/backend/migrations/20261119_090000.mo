@@ -3,9 +3,11 @@ import Time "mo:core/Time";
 import Storage "mo:caffeineai-object-storage/Storage";
 import AccessControl "mo:caffeineai-authorization/access-control";
 
-// Adds the principal link: one .xyz account per .app account, stored in both
-// directions. OldActor is exactly the codomain of the previous entry
-// (20261119_000000), which is already deployed and therefore frozen.
+// Adds the principal link plus chain posts: one .xyz account per .app account
+// stored in both directions, and 1-4 new chain ancestors declared by a post.
+// OldActor is exactly the codomain of the previous entry (20261119_000000),
+// which is deployed and therefore frozen. This file is still pending, so both
+// changes are folded into it.
 module {
   type UserProfile = {
     username : Text;
@@ -72,6 +74,30 @@ module {
     linkedAt : Time.Time;
   };
 
+  type GraphRefInput = {
+    graphId : Text;
+    graphName : Text;
+    nodeId : Text;
+    nodeName : Text;
+    nodeType : Text;
+    path : Text;
+  };
+
+  type XyzSourceRef = { name : Text; url : Text };
+
+  type ChainLevel = {
+    nodeType : Text;
+    name : Text;
+    tags : [Text];
+    attributes : [(Text, [Text])];
+    sources : [XyzSourceRef];
+  };
+
+  type ChainSpec = {
+    start : ?GraphRefInput;
+    levels : [ChainLevel];
+  };
+
   type OldActor = {
     accessControlState : AccessControl.AccessControlState;
     userProfiles : Map.Map<Principal, UserProfile>;
@@ -118,6 +144,8 @@ module {
     postDislikes : Map.Map<Nat, Map.Map<Principal, Bool>>;
     linkByXyz : Map.Map<Principal, LinkState>;
     appToXyz : Map.Map<Principal, Principal>;
+    postChains : Map.Map<Nat, ChainSpec>;
+    userTextBytes : Map.Map<Principal, Nat>;
   };
 
   public func migration(old : OldActor) : NewActor {
@@ -144,6 +172,8 @@ module {
       postDislikes = old.postDislikes;
       linkByXyz = Map.empty();
       appToXyz = Map.empty();
+      postChains = Map.empty();
+      userTextBytes = Map.empty();
     };
   };
 };

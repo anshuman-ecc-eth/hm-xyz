@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { useNavigate } from "@tanstack/react-router";
 import { Link2 } from "lucide-react";
+import { formatNodeType } from "../utils/formatting";
 
 export interface CitationChipRef {
   graphId: string;
@@ -44,8 +45,8 @@ export function CitationChip({
       <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
         {graphRef.path || graphRef.nodeName}
       </span>
-      <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
-        {graphRef.nodeType}
+      <span className="shrink-0 text-[10px] tracking-wide text-muted-foreground">
+        {formatNodeType(graphRef.nodeType)}
       </span>
     </button>
   );

@@ -116,6 +116,18 @@ export const GraphRefInput = IDL.Record({
   'nodeType' : IDL.Text,
   'graphName' : IDL.Text,
 });
+export const XyzSourceRef = IDL.Record({ 'url' : IDL.Text, 'name' : IDL.Text });
+export const ChainLevelInput = IDL.Record({
+  'name' : IDL.Text,
+  'tags' : IDL.Vec(IDL.Text),
+  'attributes' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Vec(IDL.Text))),
+  'sources' : IDL.Vec(XyzSourceRef),
+  'nodeType' : IDL.Text,
+});
+export const ChainInput = IDL.Record({
+  'start' : IDL.Opt(GraphRefInput),
+  'levels' : IDL.Vec(ChainLevelInput),
+});
 export const ExternalBlob = IDL.Vec(IDL.Nat8);
 export const PostType = IDL.Variant({
   'repost' : IDL.Nat,
@@ -134,10 +146,19 @@ export const GraphRef = IDL.Record({
   'nodeType' : IDL.Text,
   'graphName' : IDL.Text,
 });
+export const ChainLevelView = IDL.Record({
+  'name' : IDL.Text,
+  'nodeType' : IDL.Text,
+});
+export const ChainView = IDL.Record({
+  'start' : IDL.Opt(GraphRefInput),
+  'levels' : IDL.Vec(ChainLevelView),
+});
 export const PostResponse = IDL.Record({
   'id' : IDL.Nat,
   'dislikeCount' : IDL.Nat,
   'weight' : IDL.Opt(IDL.Int),
+  'textTruncated' : IDL.Bool,
   'postType' : PostType,
   'graphRef' : IDL.Opt(GraphRef),
   'authorUsername' : IDL.Text,
@@ -145,6 +166,7 @@ export const PostResponse = IDL.Record({
   'isRepostedByCurrentUser' : IDL.Bool,
   'authorProfilePictureHash' : IDL.Opt(ExternalBlob),
   'repostCount' : IDL.Nat,
+  'chain' : IDL.Opt(ChainView),
   'createdAt' : Time,
   'text' : IDL.Text,
   'canEdit' : IDL.Bool,
@@ -308,6 +330,11 @@ export const idlService = IDL.Service({
       [],
     ),
   'confirmAppLink' : IDL.Func([IDL.Text], [LinkResult], []),
+  'createChainPost' : IDL.Func(
+      [ChainInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
+      [PostResponse],
+      [],
+    ),
   'createGraphPost' : IDL.Func(
       [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
       [PostResponse],
@@ -348,6 +375,11 @@ export const idlService = IDL.Service({
       [IDL.Opt(IDL.Nat), IDL.Nat],
       [PaginatedPosts],
       ['query'],
+    ),
+  'getLinkedBuzzBalance' : IDL.Func(
+      [],
+      [IDL.Opt(IDL.Record({ 'text' : IDL.Text, 'units' : IDL.Int }))],
+      [],
     ),
   'getMyAppLink' : IDL.Func([], [IDL.Opt(LinkState)], ['query']),
   'getNotifications' : IDL.Func(
@@ -564,6 +596,18 @@ export const idlFactory = ({ IDL }) => {
     'nodeType' : IDL.Text,
     'graphName' : IDL.Text,
   });
+  const XyzSourceRef = IDL.Record({ 'url' : IDL.Text, 'name' : IDL.Text });
+  const ChainLevelInput = IDL.Record({
+    'name' : IDL.Text,
+    'tags' : IDL.Vec(IDL.Text),
+    'attributes' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Vec(IDL.Text))),
+    'sources' : IDL.Vec(XyzSourceRef),
+    'nodeType' : IDL.Text,
+  });
+  const ChainInput = IDL.Record({
+    'start' : IDL.Opt(GraphRefInput),
+    'levels' : IDL.Vec(ChainLevelInput),
+  });
   const ExternalBlob = IDL.Vec(IDL.Nat8);
   const PostType = IDL.Variant({
     'repost' : IDL.Nat,
@@ -582,10 +626,19 @@ export const idlFactory = ({ IDL }) => {
     'nodeType' : IDL.Text,
     'graphName' : IDL.Text,
   });
+  const ChainLevelView = IDL.Record({
+    'name' : IDL.Text,
+    'nodeType' : IDL.Text,
+  });
+  const ChainView = IDL.Record({
+    'start' : IDL.Opt(GraphRefInput),
+    'levels' : IDL.Vec(ChainLevelView),
+  });
   const PostResponse = IDL.Record({
     'id' : IDL.Nat,
     'dislikeCount' : IDL.Nat,
     'weight' : IDL.Opt(IDL.Int),
+    'textTruncated' : IDL.Bool,
     'postType' : PostType,
     'graphRef' : IDL.Opt(GraphRef),
     'authorUsername' : IDL.Text,
@@ -593,6 +646,7 @@ export const idlFactory = ({ IDL }) => {
     'isRepostedByCurrentUser' : IDL.Bool,
     'authorProfilePictureHash' : IDL.Opt(ExternalBlob),
     'repostCount' : IDL.Nat,
+    'chain' : IDL.Opt(ChainView),
     'createdAt' : Time,
     'text' : IDL.Text,
     'canEdit' : IDL.Bool,
@@ -753,6 +807,11 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'confirmAppLink' : IDL.Func([IDL.Text], [LinkResult], []),
+    'createChainPost' : IDL.Func(
+        [ChainInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
+        [PostResponse],
+        [],
+      ),
     'createGraphPost' : IDL.Func(
         [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
         [PostResponse],
@@ -793,6 +852,11 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Opt(IDL.Nat), IDL.Nat],
         [PaginatedPosts],
         ['query'],
+      ),
+    'getLinkedBuzzBalance' : IDL.Func(
+        [],
+        [IDL.Opt(IDL.Record({ 'text' : IDL.Text, 'units' : IDL.Int }))],
+        [],
       ),
     'getMyAppLink' : IDL.Func([], [IDL.Opt(LinkState)], ['query']),
     'getNotifications' : IDL.Func(

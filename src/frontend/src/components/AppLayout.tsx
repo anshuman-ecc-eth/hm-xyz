@@ -4,7 +4,7 @@ import { Menu } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { AppSidebar } from "./AppSidebar";
-import { TrendingPanel } from "./TrendingPanel";
+import { RightPanel } from "./RightPanel";
 
 function getPageTitle(pathname: string): string {
   if (pathname === "/") return "home";
@@ -52,7 +52,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <main className="min-w-0 flex-1 border-r border-border">
             {children}
           </main>
-          <TrendingPanel />
+          <RightPanel />
         </div>
       </div>
     </div>

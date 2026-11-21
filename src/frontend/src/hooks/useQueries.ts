@@ -7,7 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { ExternalBlob, GraphRefInput } from "../backend";
+import type { ChainInput, ExternalBlob, GraphRefInput } from "../backend";
 import { createActor } from "../backend";
 import type { PaginatedPosts, Post, UserProfileResponse } from "../utils/types";
 
@@ -966,6 +966,34 @@ export function useCreateGraphPost() {
   });
 }
 
+export function useCreateChainPost() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      chain,
+      text,
+      mediaHash,
+      mediaType,
+    }: {
+      chain: ChainInput;
+      text: string;
+      mediaHash: ExternalBlob | null;
+      mediaType: string | null;
+    }) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.createChainPost(chain, text, mediaHash, mediaType);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["globalFeed"] });
+      queryClient.invalidateQueries({ queryKey: ["homeFeed"] });
+      queryClient.invalidateQueries({ queryKey: ["userPosts"] });
+      queryClient.invalidateQueries({ queryKey: ["graphNodePosts"] });
+    },
+  });
+}
+
 export function useDislikePost() {
   const { actor } = useActor(createActor);
   const queryClient = useQueryClient();
@@ -1129,6 +1157,20 @@ export function useXyzWriteDraft(postId: bigint | null, enabled = true) {
       return actor.getXyzWriteDraft(postId);
     },
     enabled: !!actor && !isFetching && postId != null && enabled,
+  });
+}
+
+export function useLinkedBuzzBalance(enabled = true) {
+  const { actor, isFetching } = useActor(createActor);
+
+  return useQuery({
+    queryKey: ["linkedBuzz"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.getLinkedBuzzBalance();
+    },
+    enabled: !!actor && !isFetching && enabled,
+    staleTime: 15_000,
   });
 }
 
