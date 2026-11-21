@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
 import { useInternetIdentity } from "@caffeineai/core-infrastructure";
 import { Heart, Loader2, MessageCircle, Repeat2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { annotate } from "rough-notation";
 import { LandingGraph } from "./LandingGraph";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -63,7 +64,7 @@ const FEED_POSTS: MockPostData[] = [
     name: "Jehosh",
     handle: "jehosh",
     time: "2h",
-    text: "Starting a curation on Article 371J :)",
+    text: "added a new location in part 21, article 371J :)",
     likes: 12,
     replies: 3,
     reposts: 1,
@@ -75,7 +76,7 @@ const FEED_POSTS: MockPostData[] = [
     handle: "sukriti",
     replyTo: "jehosh",
     time: "1h",
-    text: "Such an important but understudied area..",
+    text: "such an important but understudied area (pun  intended)..",
     likes: 45,
     replies: 8,
     reposts: 12,
@@ -87,7 +88,7 @@ const FEED_POSTS: MockPostData[] = [
     handle: "sudeep",
     replyTo: "sukriti",
     time: "42m",
-    text: "Exactly, I don't know anyone else working on this!",
+    text: "exactly, I don't know anyone else working on this!",
     likes: 4,
     replies: 0,
     reposts: 0,
@@ -99,7 +100,7 @@ const FEED_POSTS: MockPostData[] = [
     handle: "gayatri",
     replyTo: "jehosh",
     time: "20m",
-    text: "Nice, we'll be following closely.",
+    text: "interesting, we need to link this to the 98th amendment but that will take us to the concept of 'amendment' which is a complex territory",
     likes: 6,
     replies: 0,
     reposts: 1,
@@ -211,6 +212,40 @@ export function LandingPage() {
     if (!isLoggingIn || isLoginError) setPendingProvider(null);
   }, [isLoggingIn, isLoginError]);
 
+  // A hand-drawn underline under "own", drawn at half speed: it draws in over
+  // 1.4s, then clears a second later. rough-notation injects an absolutely
+  // positioned SVG after the span, so the paragraph is its containing block.
+  const ownRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    const el = ownRef.current;
+    if (!el) return;
+
+    const reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const duration = 1400;
+    const annotation = annotate(el, {
+      type: "underline",
+      color: "#ff3b30",
+      strokeWidth: 2,
+      padding: 2,
+      iterations: 2,
+      animate: !reduced,
+      animationDuration: duration,
+    });
+    annotation.show();
+
+    const timer = window.setTimeout(
+      () => annotation.hide(),
+      (reduced ? 0 : duration) + 1000,
+    );
+
+    return () => {
+      window.clearTimeout(timer);
+      annotation.remove();
+    };
+  }, []);
+
   const signInWithInternetIdentity = () => {
     setPendingProvider("ii");
     login();
@@ -308,7 +343,10 @@ export function LandingPage() {
                   MUTED,
                 )}
               >
-                <p>With Hyvmind, you own your interpretations.</p>
+                <p className="relative">
+                  With Hyvmind, you <span ref={ownRef}>own</span> your
+                  interpretations.
+                </p>
                 <p className="mt-6">
                   Each post is a token in an expanding artifact — recorded,
                   organised and credited to your account.

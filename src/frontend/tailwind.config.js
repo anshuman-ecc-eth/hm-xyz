@@ -103,6 +103,18 @@ export default {
           "0%": { opacity: "0", transform: "translateY(16px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        "graph-draw": {
+          "0%": { strokeDashoffset: "1" },
+          "100%": { strokeDashoffset: "0" },
+        },
+        "graph-note": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "graph-pulse": {
+          "0%, 100%": { transform: "scale(1)", opacity: "1" },
+          "50%": { transform: "scale(1.08)", opacity: "0.65" },
+        },
       },
       animation: {
         "like-pop": "like-pop 0.3s ease-out",
@@ -110,6 +122,10 @@ export default {
         "fade-up-delay-1": "fade-up 0.5s ease-out 0.1s both",
         "fade-up-delay-2": "fade-up 0.5s ease-out 0.2s both",
         "fade-up-delay-3": "fade-up 0.5s ease-out 0.3s both",
+        "graph-ring":
+          "graph-draw 0.28s ease-out both, graph-pulse 2.4s ease-in-out 0.28s infinite",
+        "graph-line": "graph-draw 0.28s ease-out 0.12s both",
+        "graph-note": "graph-note 0.16s ease-out 0.26s both",
       },
     },
   },

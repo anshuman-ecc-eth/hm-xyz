@@ -22,14 +22,24 @@ const PER_CLUSTER = 8;
 // drawn size is LABEL_PX / scale user units.
 const LABEL_PX = 12;
 
+/** Hyvmind's five node types, from collection down to argument. */
+export type NodeType =
+  | "curation"
+  | "swarm"
+  | "location"
+  | "lawEntity"
+  | "interpEntity";
+
 export type GraphNode = {
   id: string;
   label?: string;
   title?: string;
   hub?: boolean;
   anchor?: boolean;
-  /** "article" (default), "contributor" or "follower". */
-  kind?: "article" | "contributor" | "follower";
+  /** "article" (default), "contributor", "follower" or "interpretation". */
+  kind?: "article" | "contributor" | "follower" | "interpretation";
+  /** Hyvmind node type; it sets the node's colour. */
+  type?: NodeType;
   /** Small caption shown with the label, e.g. "contributor". */
   tag?: string;
   /** Put the label under the dot instead of over it. */
@@ -39,6 +49,10 @@ export type GraphNode = {
   /** Target position for anchors. */
   tx?: number;
   ty?: number;
+  /** Pin strength override; the worked example is held firmer than the rest. */
+  stiff?: number;
+  /** Frame padding override, in user units. */
+  pad?: number;
   x: number;
   y: number;
   vx: number;
@@ -50,6 +64,18 @@ export type GraphEdge = {
   b: number;
   dashed?: boolean;
   rest?: number;
+  /** The level that owns the relation; it sets the relation's colour. */
+  tone?: NodeType;
+};
+
+// Hyvmind's own palette: a node takes its type's colour, and a relation borrows
+// the colour of the level that owns it.
+const TYPE_COLOUR: Record<NodeType, { fill: string; line: string }> = {
+  curation: { fill: "fill-[#4a9eff]", line: "text-[#4a9eff]" },
+  swarm: { fill: "fill-[#ff7f50]", line: "text-[#ff7f50]" },
+  location: { fill: "fill-[#90EE90]", line: "text-[#90EE90]" },
+  lawEntity: { fill: "fill-[#FFD700]", line: "text-[#FFD700]" },
+  interpEntity: { fill: "fill-[#DA70D6]", line: "text-[#DA70D6]" },
 };
 
 type Article = { n: string; title: string };
@@ -134,7 +160,7 @@ const HIERARCHY: { hub: string; branches: Branch[] } = {
     },
     {
       id: "part-v",
-      label: "Part V · The Executive",
+      label: "Part V · The Union",
       short: "Part V",
       articles: [
         { n: "52", title: "The President of India" },
@@ -202,6 +228,7 @@ export function buildGraph() {
     label: HIERARCHY.hub,
     title: HIERARCHY.hub,
     hub: true,
+    type: "curation",
     tx: cx,
     ty: cy,
     x: cx,
@@ -222,6 +249,7 @@ export function buildGraph() {
       label: branch.short,
       title: branch.label,
       anchor: true,
+      type: "swarm",
       tx: ax,
       ty: ay,
       x: ax,
@@ -229,7 +257,7 @@ export function buildGraph() {
       vx: 0,
       vy: 0,
     });
-    edges.push({ a: 0, b: anchorIndex });
+    edges.push({ a: 0, b: anchorIndex, tone: "curation" });
 
     const articles = pick(branch.articles, PER_CLUSTER, rand);
     const leafStart = nodes.length;
@@ -242,12 +270,17 @@ export function buildGraph() {
         id: `${branch.id}-${article.n}`,
         label: `Art. ${article.n}`,
         title: `Article ${article.n} — ${article.title}`,
+        type: "location",
+        // Part V's expanded label runs left along its own row, and 72's and
+        // 63's above-labels land in it. Put those two underneath.
+        labelBelow:
+          branch.id === "part-v" && (article.n === "72" || article.n === "63"),
         x: ax + Math.cos(a2) * r2 * spread,
         y: ay + Math.sin(a2) * r2 * spread,
         vx: 0,
         vy: 0,
       });
-      edges.push({ a: anchorIndex, b: nodes.length - 1 });
+      edges.push({ a: anchorIndex, b: nodes.length - 1, tone: "swarm" });
       void i;
     });
 
@@ -271,40 +304,134 @@ export function buildGraph() {
         const key = i < j ? `${i}-${j}` : `${j}-${i}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        edges.push({ a: i, b: j });
+        edges.push({ a: i, b: j, tone: "location" });
       }
     }
 
-    // Part XXI carries a worked example of the knowledge hierarchy:
-    // Article 371 -> the person who curated it -> the people following them.
+    // Part XXI carries a worked example of the whole hierarchy:
+    // location (Article 371J) -> its law tokens -> the posts that interpret
+    // them -> the person who wrote those posts -> the people following them.
     if (branch.id === "part-xxi") {
-      // The chain is pinned rather than simulated: a four-level tail on a
+      // The tail is pinned rather than simulated: a five-level chain on a
       // shared canvas otherwise piles up against the frame edge.
       const pin = (node: GraphNode, px: number, py: number) => {
         node.tx = WIDTH * px;
         node.ty = HEIGHT * py;
         node.x = node.tx;
         node.y = node.ty;
+        node.stiff = 0.14;
       };
 
       const articleNode = nodes[leafStart];
-      pin(articleNode, 0.3, 0.63);
+      // Label it to the left: everything to its right is the law stack and
+      // its long names, which used to swallow this label.
+      articleNode.labelSide = "left";
+      pin(articleNode, 0.36, 0.6);
+
+      // The three law tokens below the location. They are stacked rather than
+      // fanned so their long names, which read to the right, never overlap
+      // when a hover reveals them together.
+      const laws = [
+        {
+          id: "law-development-board",
+          label: "separate development board",
+          px: 0.4375,
+          py: 0.69,
+        },
+        {
+          id: "law-equitable-funds",
+          label: "equitable allocation of funds",
+          px: 0.4286,
+          py: 0.795,
+        },
+        {
+          id: "law-equitable-opportunities",
+          label: "equitable opportunities and facilities",
+          px: 0.3929,
+          py: 0.895,
+        },
+      ];
+      const lawIndices: number[] = [];
+      for (const law of laws) {
+        const index = nodes.length;
+        const node: GraphNode = {
+          id: law.id,
+          label: law.label,
+          title: law.label,
+          type: "lawEntity",
+          labelSide: "right",
+          x: 0,
+          y: 0,
+          vx: 0,
+          vy: 0,
+        };
+        pin(node, law.px, law.py);
+        nodes.push(node);
+        lawIndices.push(index);
+        edges.push({ a: leafStart, b: index, rest: 46, tone: "location" });
+      }
+
+      // Four posts interpret those laws: one on the first, two on the second,
+      // one on the third. The posts are the only tokens here Jehosh wrote.
+      const posts: Array<{
+        id: string;
+        label: string;
+        law: number;
+        px: number;
+        py: number;
+        labelBelow?: boolean;
+      }> = [
+        { id: "post-1", label: "post 1", law: 0, px: 0.245, py: 0.712 },
+        { id: "post-2", label: "post 2", law: 1, px: 0.315, py: 0.787 },
+        {
+          id: "post-3",
+          label: "post 3",
+          law: 1,
+          px: 0.245,
+          py: 0.83,
+          labelBelow: true,
+        },
+      ];
+      const postIndices: number[] = [];
+      for (const post of posts) {
+        const index = nodes.length;
+        const node: GraphNode = {
+          id: post.id,
+          label: post.label,
+          title: post.label,
+          kind: "interpretation",
+          type: "interpEntity",
+          labelBelow: post.labelBelow,
+          x: 0,
+          y: 0,
+          vx: 0,
+          vy: 0,
+        };
+        pin(node, post.px, post.py);
+        nodes.push(node);
+        postIndices.push(index);
+        edges.push({
+          a: lawIndices[post.law],
+          b: index,
+          rest: 44,
+          tone: "lawEntity",
+        });
+      }
 
       const contributorIndex = nodes.length;
       const contributor = {
         id: "contrib-jehosh",
         label: "Jehosh",
         tag: "contributor",
-        title: "Jehosh — contributor to Article 371J",
+        title: "Jehosh — author of posts 1 and 2",
         kind: "contributor" as const,
         x: 0,
         y: 0,
         vx: 0,
         vy: 0,
       };
-      pin(contributor, 0.215, 0.74);
+      pin(contributor, 0.185, 0.69);
       nodes.push(contributor);
-      edges.push({ a: leafStart, b: contributorIndex, rest: 40 });
 
       const followerSlots: Array<{
         name: string;
@@ -314,12 +441,22 @@ export function buildGraph() {
         labelBelow?: boolean;
         /** Sudeep is nearest the left edge, so his name goes outside. */
         labelSide?: "left" | "right";
+        /** Frame padding override for people who sit on the edge. */
+        pad?: number;
       }> = [
-        { name: "Sukriti", px: 0.095, py: 0.66 },
-        { name: "Sudeep", px: 0.13, py: 0.845, labelSide: "left" },
-        { name: "Gayatri", px: 0.235, py: 0.885, labelBelow: true },
+        { name: "Sukriti", px: 0.03, py: 0.84, pad: 26 },
+        { name: "Sudeep", px: 0.179, py: 0.915, labelBelow: true },
+        { name: "Gayatri", px: 0.071, py: 0.625 },
       ];
-      for (const { name, px, py, labelBelow, labelSide } of followerSlots) {
+      const followerIndices: number[] = [];
+      for (const {
+        name,
+        px,
+        py,
+        labelBelow,
+        labelSide,
+        pad,
+      } of followerSlots) {
         const follower = {
           id: `follower-${name.toLowerCase()}`,
           label: name,
@@ -328,12 +465,14 @@ export function buildGraph() {
           kind: "follower" as const,
           labelBelow,
           labelSide,
+          pad,
           x: 0,
           y: 0,
           vx: 0,
           vy: 0,
         };
         pin(follower, px, py);
+        followerIndices.push(nodes.length);
         nodes.push(follower);
         edges.push({
           a: contributorIndex,
@@ -344,9 +483,6 @@ export function buildGraph() {
       }
 
       // The four people know each other: connect the followers pairwise too.
-      const followerIndices = nodes
-        .map((node, index) => (node.kind === "follower" ? index : -1))
-        .filter((index) => index >= 0);
       for (let i = 0; i < followerIndices.length; i++) {
         for (let j = i + 1; j < followerIndices.length; j++) {
           edges.push({
@@ -357,6 +493,21 @@ export function buildGraph() {
           });
         }
       }
+
+      // All three posts are Jehosh's.
+      const postAuthors = [
+        contributorIndex,
+        contributorIndex,
+        contributorIndex,
+      ];
+      postIndices.forEach((postIndex, i) => {
+        edges.push({
+          a: postIndex,
+          b: postAuthors[i],
+          rest: 44,
+          tone: "interpEntity",
+        });
+      });
     }
   });
 
@@ -425,14 +576,17 @@ export function step(nodes: GraphNode[], edges: GraphEdge[]) {
     node.vy += (HEIGHT / 2 - node.y) * CENTER;
 
     if (node.tx !== undefined && node.ty !== undefined) {
-      node.vx += (node.tx - node.x) * PIN;
-      node.vy += (node.ty - node.y) * PIN;
+      const stiff = node.stiff ?? PIN;
+      node.vx += (node.tx - node.x) * stiff;
+      node.vy += (node.ty - node.y) * stiff;
     }
 
     node.vx *= DAMPING;
     node.vy *= DAMPING;
 
-    const pad = 34;
+    // The frame padding, overridable per node so the people can sit closer to
+    // the left edge than the rest of the graph.
+    const pad = node.pad ?? 34;
     if (node.x < pad) node.vx += (pad - node.x) * 0.08;
     if (node.x > WIDTH - pad) node.vx -= (node.x - (WIDTH - pad)) * 0.08;
     if (node.y < pad) node.vy += (pad - node.y) * 0.08;
@@ -450,6 +604,168 @@ export function step(nodes: GraphNode[], edges: GraphEdge[]) {
   return energy;
 }
 
+// The graph is grey at rest; a hover reveals the colour of the level a
+// relation belongs to. Untoned relations fall back to the interaction accent.
+const EDGE_GREY = "text-[#d2d2d7] dark:text-[#38383a]";
+const NODE_GREY = "fill-[#6e6e73] dark:fill-[#a1a1a6]";
+
+// Decorative rays around the hub. The start is rotated off the four spokes so
+// no ray lies along a real relation.
+const RAY_COUNT = 7;
+const RAY_START = (-4 * Math.PI) / 180;
+
+// Explanations that appear when a node is hovered, one per node type.
+type NoteKey = NodeType | "person";
+
+const TYPE_NOTE: Partial<Record<NoteKey, string>> = {
+  curation: "curation = general topic",
+  swarm: "swarm = subtopic & community",
+  location: "location = semantic address",
+  lawEntity: "law token = meaningful chunk of legal language",
+  interpEntity: "interpretation token",
+  person: "researcher",
+};
+
+const NODE_RADIUS: Record<NodeType, number> = {
+  curation: 14,
+  swarm: 9,
+  location: 6.75,
+  lawEntity: 6.5,
+  interpEntity: 5.5,
+};
+
+// The note is specified in rendered CSS pixels and divided by the letterbox
+// scale, so it stays the same physical size as the labels. Every callout shares
+// one home: the empty left margin, above the people. Its left edge is measured
+// from the panel edge, not the viewBox, so it uses the letterbox space too.
+const NOTE_FONT_PX = 11;
+const NOTE_PAD_PX = 8;
+const NOTE_LINE = 1.45;
+const NOTE_LEFT_PX = 12;
+const NOTE_WIDTH_MAX = 230;
+// The top edge of the hovered hub: its centre (HEIGHT / 2) minus its grown
+// radius (14 × 1.25). The note is centred a touch above that line.
+const NOTE_TOP = HEIGHT / 2 - 14 * 1.25;
+const NOTE_LIFT = 10;
+
+function nodeRadius(node: GraphNode) {
+  if (node.type) return NODE_RADIUS[node.type];
+  if (node.kind === "contributor") return 6.5;
+  if (node.kind === "follower") return 5;
+  return 6.75;
+}
+
+function noteFor(node: GraphNode) {
+  if (node.type) return TYPE_NOTE[node.type];
+  if (node.kind === "contributor" || node.kind === "follower") {
+    return TYPE_NOTE.person;
+  }
+  return undefined;
+}
+
+// The annotation chrome is one fixed ink red, independent of node type: ring,
+// leader and box outline all read as one object.
+const ANNOTATION_INK = "text-[#ff3b30] dark:text-[#ff453a]";
+
+export type NoteLayout = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  font: number;
+  pad: number;
+  lines: string[];
+  ring: number;
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+};
+
+/**
+ * Lay out the callout for a hovered node. Every note lands in the same empty
+ * space on the left; only its leader line changes, running from the node's
+ * ring to the nearest edge of the box.
+ */
+export function layoutNote(
+  node: GraphNode,
+  text: string,
+  scale: number,
+  leftPad: number,
+): NoteLayout {
+  const u = 1 / scale;
+  const font = NOTE_FONT_PX * u;
+  const pad = NOTE_PAD_PX * u;
+  const charWidth = font * 0.6;
+  // Size the box to the text: even padding on both sides, and only wrap once
+  // it would grow into the graph.
+  const width = Math.min(text.length * charWidth + pad * 2, NOTE_WIDTH_MAX);
+  // The epsilon stops a note that exactly fills the width from wrapping on
+  // floating-point noise (e.g. 24 chars at 6.6 px each).
+  const maxChars = Math.max(
+    6,
+    Math.floor((width - pad * 2) / charWidth + 1e-6),
+  );
+
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length > maxChars && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+
+  const height = pad * 2 + lines.length * font * NOTE_LINE;
+  const box = {
+    x: (NOTE_LEFT_PX - leftPad) / scale,
+    y: NOTE_TOP - height / 2 - NOTE_LIFT,
+    width,
+    height,
+  };
+  const ring = nodeRadius(node) * 1.25 + 5 * u;
+
+  // Straight leader from the ring to the point where the line of sight to the
+  // box centre crosses the box edge.
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const dx = cx - node.x;
+  const dy = cy - node.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const ux = dx / dist;
+  const uy = dy / dist;
+
+  const hits: number[] = [];
+  if (ux !== 0) {
+    for (const ex of [box.x, box.x + box.width]) {
+      const t = (ex - node.x) / ux;
+      const y = node.y + t * uy;
+      if (t > 0 && y >= box.y && y <= box.y + box.height) hits.push(t);
+    }
+  }
+  if (uy !== 0) {
+    for (const ey of [box.y, box.y + box.height]) {
+      const t = (ey - node.y) / uy;
+      const x = node.x + t * ux;
+      if (t > 0 && x >= box.x && x <= box.x + box.width) hits.push(t);
+    }
+  }
+  const reach = hits.length ? Math.min(...hits) : ring;
+  const start = Math.min(ring, reach);
+
+  return {
+    ...box,
+    font,
+    pad,
+    lines,
+    ring,
+    from: { x: node.x + ux * start, y: node.y + uy * start },
+    to: { x: node.x + ux * reach, y: node.y + uy * reach },
+  };
+}
+
 export function LandingGraph() {
   const { nodes, edges } = useMemo(() => {
     const graph = buildGraph();
@@ -460,12 +776,13 @@ export function LandingGraph() {
   const [visible, setVisible] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
 
-  // Measure the letterbox scale: with preserveAspectRatio="xMidYMid meet" the
-  // drawing is scaled by min(w / WIDTH, h / HEIGHT). The panel is usually
-  // height-bound, which is why the labels used to render far below their
-  // nominal size.
+  // Measure the letterbox: with preserveAspectRatio="xMidYMid meet" the drawing
+  // is scaled by min(w / WIDTH, h / HEIGHT) and centred in the element, leaving
+  // empty space on the long axis. The note anchors to the element edge, so it
+  // needs that offset as well as the scale.
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [scale, setScale] = useState(1);
+  const [letterbox, setLetterbox] = useState(0);
 
   useEffect(() => {
     const el = svgRef.current;
@@ -473,7 +790,9 @@ export function LandingGraph() {
     const measure = () => {
       const { width, height } = el.getBoundingClientRect();
       if (width > 0 && height > 0) {
-        setScale(Math.min(width / WIDTH, height / HEIGHT));
+        const s = Math.min(width / WIDTH, height / HEIGHT);
+        setScale(s);
+        setLetterbox((width - WIDTH * s) / 2);
       }
     };
     measure();
@@ -500,20 +819,61 @@ export function LandingGraph() {
     hovered !== null &&
     (id === hovered || (neighbours.get(hovered)?.has(id) ?? false));
 
-  // Labels are hover-only: the graph reads as colour and structure at rest, and
-  // names itself only under the cursor. A hovered leaf also brings up its
-  // direct neighbours, so a cluster introduces itself.
+  // Rays run from the hub to the frame edge. They are texture, not data:
+  // drawn before everything else, never lit, never dimmed.
+  const rays = useMemo(() => {
+    const hub = nodes.find((node) => node.hub);
+    if (!hub) return [];
+    return Array.from({ length: RAY_COUNT }, (_, i) => {
+      const angle = RAY_START + (i * Math.PI * 2) / RAY_COUNT;
+      const dx = Math.cos(angle);
+      const dy = Math.sin(angle);
+      const t = Math.min(
+        dx > 0
+          ? (WIDTH - hub.x) / dx
+          : dx < 0
+            ? -hub.x / dx
+            : Number.POSITIVE_INFINITY,
+        dy > 0
+          ? (HEIGHT - hub.y) / dy
+          : dy < 0
+            ? -hub.y / dy
+            : Number.POSITIVE_INFINITY,
+      );
+      return {
+        angle,
+        x1: hub.x,
+        y1: hub.y,
+        x2: hub.x + dx * t,
+        y2: hub.y + dy * t,
+      };
+    });
+  }, [nodes]);
+
+  // Labels are hover-only: the graph reads as grey structure at rest, and
+  // names itself — and shows its level colours — only under the cursor. A
+  // hover always introduces the node's neighbours, hub and Part included, so
+  // every node that lights up also names itself.
   const labelled = useMemo(() => {
     const set = new Set<string>();
     if (hovered) {
-      const node = nodes.find((n) => n.id === hovered);
       set.add(hovered);
-      if (node && !node.hub && !node.anchor) {
-        for (const id of neighbours.get(hovered) ?? []) set.add(id);
-      }
+      for (const id of neighbours.get(hovered) ?? []) set.add(id);
     }
     return set;
-  }, [hovered, neighbours, nodes]);
+  }, [hovered, neighbours]);
+
+  // The annotation is a callout, not a tooltip: ring around the node, connector
+  // to a wrapped note. Only the hovered node can show one, and only once its
+  // type has an explanation.
+  const annotation = useMemo(() => {
+    if (!hovered) return null;
+    const node = nodes.find((n) => n.id === hovered);
+    if (!node) return null;
+    const text = noteFor(node);
+    if (!text) return null;
+    return { node, layout: layoutNote(node, text, scale, letterbox) };
+  }, [hovered, nodes, scale, letterbox]);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setVisible(true));
@@ -525,10 +885,26 @@ export function LandingGraph() {
       ref={svgRef}
       data-graph="knowledge"
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      className={`h-full w-full transition-opacity duration-700 ease-out motion-reduce:transition-none ${visible ? "opacity-100" : "opacity-0"}`}
+      className={`h-full w-full overflow-visible transition-opacity duration-700 ease-out motion-reduce:transition-none ${visible ? "opacity-100" : "opacity-0"}`}
       role="img"
-      aria-label="Constitution of India: articles grouped by Parts — Fundamental Rights, Directive Principles, and the Executive"
+      aria-label="Constitution of India: articles grouped by Parts — Fundamental Rights, Directive Principles, and the Union"
     >
+      <g>
+        {rays.map((ray) => (
+          <line
+            key={ray.angle}
+            x1={ray.x1}
+            y1={ray.y1}
+            x2={ray.x2}
+            y2={ray.y2}
+            stroke="currentColor"
+            strokeWidth={1}
+            strokeOpacity={0.35}
+            className="text-[#d2d2d7] dark:text-[#38383a]"
+          />
+        ))}
+      </g>
+
       {edges.map((edge) => {
         const a = nodes[edge.a];
         const b = nodes[edge.b];
@@ -547,14 +923,33 @@ export function LandingGraph() {
             strokeWidth={touching ? 1.5 : 1}
             strokeDasharray={edge.dashed ? "3 3" : undefined}
             strokeOpacity={dimmed ? 0.12 : touching ? 1 : 0.5}
-            className={
-              touching
-                ? "text-[#007aff] transition-opacity duration-150 dark:text-[#6b8fff]"
-                : "text-[#d2d2d7] transition-opacity duration-150 dark:text-[#38383a]"
-            }
+            className={`${
+              touching && edge.tone
+                ? TYPE_COLOUR[edge.tone].line
+                : touching
+                  ? "text-[#1d1d1f] dark:text-white"
+                  : EDGE_GREY
+            } transition-opacity duration-150`}
           />
         );
       })}
+
+      {/* The leader runs under the dots so it never looks struck through them. */}
+      {annotation && (
+        <line
+          key={`leader-${annotation.node.id}`}
+          x1={annotation.layout.from.x}
+          y1={annotation.layout.from.y}
+          x2={annotation.layout.to.x}
+          y2={annotation.layout.to.y}
+          pathLength={1}
+          strokeDasharray={1}
+          stroke="currentColor"
+          strokeWidth={1}
+          strokeOpacity={0.6}
+          className={`${ANNOTATION_INK} animate-graph-line motion-reduce:animate-none`}
+        />
+      )}
 
       <g>
         {nodes.map((node) => {
@@ -563,6 +958,8 @@ export function LandingGraph() {
           const grow = node.id === hovered ? 1.25 : 1;
           const opacity = isDim ? 0.28 : 1;
           const accent = node.id === hovered;
+          // Colour is the hover reward: at rest every node is grey.
+          const showColour = hovered !== null && isHot;
 
           return (
             <g
@@ -581,7 +978,7 @@ export function LandingGraph() {
                   cx={node.x}
                   cy={node.y}
                   r={14 * grow}
-                  className="fill-[#007aff] dark:fill-[#6b8fff]"
+                  className={showColour ? TYPE_COLOUR.curation.fill : NODE_GREY}
                 />
               ) : node.kind === "contributor" || node.kind === "follower" ? (
                 <circle
@@ -591,32 +988,44 @@ export function LandingGraph() {
                   strokeWidth={1.5}
                   className={
                     accent
-                      ? "fill-[#007aff] stroke-[#007aff] dark:fill-[#6b8fff] dark:stroke-[#6b8fff]"
+                      ? "fill-[#1d1d1f] stroke-[#1d1d1f] dark:fill-white dark:stroke-white"
                       : "fill-transparent stroke-[#6e6e73] dark:stroke-[#a1a1a6]"
                   }
+                />
+              ) : node.kind === "interpretation" ? (
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={5.5 * grow}
+                  className={
+                    showColour ? TYPE_COLOUR.interpEntity.fill : NODE_GREY
+                  }
+                  fillOpacity={isHot ? 1 : 0.75}
+                />
+              ) : node.type === "lawEntity" ? (
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={6.5 * grow}
+                  className={
+                    showColour ? TYPE_COLOUR.lawEntity.fill : NODE_GREY
+                  }
+                  fillOpacity={isHot ? 0.95 : 0.8}
                 />
               ) : node.anchor ? (
                 <circle
                   cx={node.x}
                   cy={node.y}
                   r={9 * grow}
-                  className={
-                    accent
-                      ? "fill-[#007aff] dark:fill-[#6b8fff]"
-                      : "fill-[#1d1d1f] dark:fill-white"
-                  }
-                  fillOpacity={0.92}
+                  className={showColour ? TYPE_COLOUR.swarm.fill : NODE_GREY}
+                  fillOpacity={accent ? 1 : 0.92}
                 />
               ) : (
                 <circle
                   cx={node.x}
                   cy={node.y}
                   r={6.75 * grow}
-                  className={
-                    accent
-                      ? "fill-[#007aff] dark:fill-[#6b8fff]"
-                      : "fill-[#1d1d1f] dark:fill-white"
-                  }
+                  className={showColour ? TYPE_COLOUR.location.fill : NODE_GREY}
                   fillOpacity={isHot ? 0.95 : 0.6}
                 />
               )}
@@ -644,6 +1053,7 @@ export function LandingGraph() {
           // Structural labels sit beside the dot, on whichever side has room
           // for the caption; article labels alternate above/below so
           // neighbours clear each other.
+          const side = node.labelSide;
           const offset = (node.hub ? 17 : node.anchor ? 12 : 9) * k;
           const slack = 10;
           const roomRight = WIDTH - slack - (node.x + offset);
@@ -653,13 +1063,24 @@ export function LandingGraph() {
             (expanded
               ? roomLeft > roomRight
               : node.x > WIDTH * (node.hub ? 0.95 : 0.86));
-          const room = flip ? roomLeft : roomRight;
+          const room =
+            side === "left"
+              ? roomLeft
+              : side === "right"
+                ? roomRight
+                : isLeaf
+                  ? // Centred labels can use both sides of the dot.
+                    2 * Math.min(node.x - slack, WIDTH - node.x - slack)
+                  : flip
+                    ? roomLeft
+                    : roomRight;
+          // Typed labels truncate too: a law token's name is long.
           const shown =
-            !isLeaf && text.length * charWidth > room
+            (!isLeaf || node.type !== undefined) &&
+            text.length * charWidth > room
               ? `${text.slice(0, Math.max(1, Math.floor(room / charWidth) - 1))}…`
               : text;
 
-          const side = node.labelSide;
           const above = node.labelBelow ? false : index % 2 === 0;
           let x =
             side === "left"
@@ -711,11 +1132,9 @@ export function LandingGraph() {
               paintOrder="stroke"
               opacity={isDim ? 0.25 : 1}
               className={`pointer-events-none stroke-[#fbfbfb] transition-opacity duration-150 dark:stroke-[#0c0c0c] ${
-                node.kind
-                  ? "fill-[#e0168e] dark:fill-[#ff7ab8]"
-                  : node.id === hovered || node.hub || node.anchor
-                    ? "fill-[#1d1d1f] dark:fill-white"
-                    : "fill-[#6e6e73] dark:fill-[#a1a1a6]"
+                node.id === hovered || node.hub || node.anchor
+                  ? "fill-[#1d1d1f] dark:fill-white"
+                  : "fill-[#6e6e73] dark:fill-[#a1a1a6]"
               }`}
             >
               {shown}
@@ -723,6 +1142,53 @@ export function LandingGraph() {
           );
         })}
       </g>
+
+      {annotation && (
+        <g key={`note-${annotation.node.id}`} pointerEvents="none">
+          <circle
+            cx={annotation.node.x}
+            cy={annotation.node.y}
+            r={annotation.layout.ring}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            pathLength={1}
+            strokeDasharray={1}
+            style={{ transformBox: "fill-box", transformOrigin: "center" }}
+            className={`${ANNOTATION_INK} animate-graph-ring motion-reduce:animate-none`}
+          />
+          <g className="animate-graph-note motion-reduce:animate-none">
+            <rect
+              x={annotation.layout.x}
+              y={annotation.layout.y}
+              width={annotation.layout.width}
+              height={annotation.layout.height}
+              strokeWidth={1}
+              className="fill-[#fbfbfb] stroke-[#ff3b30] dark:fill-[#0c0c0c] dark:stroke-[#ff453a]"
+            />
+            <text
+              x={annotation.layout.x + annotation.layout.pad}
+              y={
+                annotation.layout.y +
+                annotation.layout.pad +
+                annotation.layout.font * 0.8
+              }
+              fontSize={annotation.layout.font}
+              className="font-mono fill-[#1d1d1f] dark:fill-white"
+            >
+              {annotation.layout.lines.map((line, i) => (
+                <tspan
+                  key={line}
+                  x={annotation.layout.x + annotation.layout.pad}
+                  dy={i === 0 ? 0 : annotation.layout.font * NOTE_LINE}
+                >
+                  {line}
+                </tspan>
+              ))}
+            </text>
+          </g>
+        </g>
+      )}
     </svg>
   );
 }
