@@ -189,6 +189,9 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
             "Link your hyvmind.app account to publish. The chain is saved as unpublished.",
           );
           return;
+        case "gate":
+          toast.error(preview.gate.message);
+          return;
         case "throttled":
           toast.error(
             "hyvmind.app is rate limiting previews. Publish from the card in a moment.",
@@ -219,6 +222,9 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
             break;
           case "notLinked":
             toast.error("Link your hyvmind.app account to publish.");
+            break;
+          case "gate":
+            toast.error(outcome.gate.message);
             break;
           case "unknown":
             toast.error("The app did not confirm. Check status on the post.");

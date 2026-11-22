@@ -19,6 +19,7 @@ the two.
   - [Interpretation tokens](#interpretation-tokens)
   - [Weight](#weight)
   - [Votes and deletion](#votes-and-deletion)
+  - [Communities](#communities)
   - [Phase 1 posts are xyz-only](#phase-1-posts-are-xyz-only)
 - [Roadmap: connect posts to Hyvmind knowledge graphs](#roadmap-connect-posts-to-hyvmind-knowledge-graphs)
   - [Goal](#goal)
@@ -168,6 +169,32 @@ must never be implemented by synthesising graffiti.
   (`hiddenAt`), and the app token is immutable either way. Vote-deletion
   therefore applies to xyz-only citations, not to published contributions.
 
+### Communities
+
+Every swarm is a community: a group chat in the sidebar, under Notifications,
+named `Curation > Swarm` and keyed by the swarm's node id, so two swarms with the
+same name under different curations stay distinct.
+
+- The writer who publishes a swarm from xyz is member #1.
+- Members invite by mentioning `@username` in the chat. Two outstanding invites
+  per member, 150 members per community: a vouch pool that could grow
+  exponentially is not a permission system.
+- The invitee accepts or declines from Notifications; accepting adds them to the
+  chat and to the vouch list.
+- **The community is the write permission.** A token may be published under a
+  swarm when the writer is a member, or a mutual of any current member. Nothing
+  is stored per grant: revocation is the next write's evaluation, so unfollowing
+  or leaving takes effect on the next attempt with no app call.
+- A swarm created in the app before xyz had a community for it stays closed until
+  its creator links. The first permitted write creates the community with the
+  creator as member #1, so legacy swarms open on use rather than by a bulk scan.
+- Citations created before swarms were captured record their swarm on the first
+  publish attempt, from the same node read the composer uses.
+- The captured swarm id and creator are client-supplied, like every ref field: a
+  query cannot verify them. Forging the creator only lets a writer vouch for
+  themselves through an account they already control, and the community records
+  who claimed it.
+
 ### Phase 1 posts are xyz-only
 
 Until the write path (Phase 3) exists, a graph post never reaches the app: it is
@@ -255,12 +282,13 @@ to read, cite and write graphs from xyz.
   not defensive polish.
 - **Resolve the app's backend canister ID from `https://hyvmind.app/env.json`**
   with `4p5ty-yyaaa-aaaam-qfana-cai` as a fallback. Do not hardcode it.
-- **Follower-gating is dropped for reads and retained for writes.** One-way
-  follows plus "mutuals" is a discovery heuristic, not a permission decision, and
-  for legal research explicit per-curation grants are the right model. The follow
-  graph drives feeds; it does not authorize reads. It *does* gate writes: a
-  writer may only extend a path whose existing creators mutually follow them —
-  a social constraint xyz enforces before calling, not an on-chain boundary.
+- **Follower-gating is dropped for reads and replaced for writes.** One-way
+  follows plus "mutuals" is a discovery heuristic, not a permission decision. The
+  follow graph drives feeds; it never authorizes reads. For writes it is the
+  *vouch* signal inside a swarm community: a writer may publish under a swarm when
+  they are a member, or a mutual of any current member. That is a social
+  constraint xyz evaluates before calling — never an on-chain boundary, and never
+  evaluated by the app.
 - **Weights are not mirrored in the current scope.** See [Weight](#weight).
 
 ### Phases
@@ -402,16 +430,23 @@ curation, swarm or location is rejected.
   plan, cost, balance and a **digest**. Commit resends the exact input plus the
   digest; `#stale` means re-show and ask again; `#blocked` and `#insufficient`
   charge nothing.
-- Permissions: every existing creator on the path must have a linked app account
-  and mutually follow the writer; a creator who is the writer is satisfied with no
-  attestation. Blocks return `pathCreators` with `{ appPrincipal, displayName?,
-  linked }` so xyz can render "follow @X" versus "ask them to link". The app never
-  emits "not mutual".
-- Day-one consequence, stated plainly: **existing graphs are effectively
-  read-only from xyz** until their path creators link and mutual-follow. New
-  branches under the writer's own nodes, and new graphs, work immediately.
-- No weight mirroring. `mutualFollowXyz` carries xyz principals; `writerApp` is
-  always derived app-side from `writerXyz` and never asserted.
+- Permissions: **the app enforces structure, xyz enforces the social rule.** The
+  app checks that the path is complete, that types and ids resolve, that names do
+  not collide, that the writer's Buzz covers the cost, and that the digest and
+  `writeId` are unchanged; it has no follow table and evaluates nothing social.
+  `#blocked` is now structural only, and `pathCreators` is informational.
+- xyz: the gate is the swarm's **community** — the writer must be a member, or a
+  mutual of any current member. A swarm with no community yet falls back to its
+  creator: the writer must be mutual with the creator's linked account, and the
+  first permitted write creates the community. A swarm whose creator never linked
+  is closed. See [Communities](#communities).
+- Consequence, stated plainly: **the allowlisted xyz backend is the entire social
+  fence.** A compromised or buggy xyz can insert any structurally valid extension
+  into any graph, and published tokens cannot be retracted. Anything that must
+  hold app-side has to be expressible as a structural rule.
+- No weight mirroring. `mutualFollowXyz` is still sent for wire compatibility and
+  is ignored by the app; `writerApp` is always derived app-side from `writerXyz`
+  and never asserted.
 - xyz: store the returned published graph id, revision, interp node id and path
   per post, in `tokenNodeId`, and render it from the snapshot.
 

@@ -1,5 +1,6 @@
 import List "mo:core/List";
 import Map "mo:core/Map";
+import Array "mo:core/Array";
 import Runtime "mo:core/Runtime";
 import Time "mo:core/Time";
 import Char "mo:core/Char";
@@ -64,6 +65,21 @@ actor {
     nodeName : Text;
     nodeType : Text;
     path : Text;
+    // The enclosing swarm, captured from the same node read. Write permission
+    // is scoped to that swarm's community; null means no swarm is known, and no
+    // publish may pass the gate. Like every ref field this is shape-checked
+    // only — a query cannot verify it.
+    swarmNodeId : ?Text;
+    swarmCreator : ?Principal;
+    // Display name for the community, "Curation > Swarm", composed client-side
+    // from the same node read.
+    communityName : ?Text;
+  };
+
+  type SwarmCapture = {
+    swarmNodeId : Text;
+    swarmCreator : ?Principal;
+    communityName : ?Text;
   };
 
   // ── Chains ──────────────────────────────────────────────────────────────────
@@ -149,6 +165,77 @@ actor {
     contributionCount : Nat;          // top-level tokens only
   };
 
+  // ── Communities ─────────────────────────────────────────────────────────────
+  // One community per swarm, named "Curation > Swarm". The swarm node id is the
+  // exact key, so two swarms with the same name stay distinct. Membership is
+  // xyz-local: the app has no follow graph and enforces no social rule, so this
+  // is where a write permission actually comes from.
+
+  type Community = {
+    id : Text;                 // swarm node id
+    graphId : Text;
+    name : Text;
+    creator : Principal;       // .app principal recorded by the write
+    createdAt : Time.Time;
+    memberCount : Nat;
+    lastMessageAt : ?Time.Time;
+  };
+
+  type CommunityMember = { joinedAt : Time.Time };
+
+  type CommunityInvite = {
+    invitedBy : Principal;
+    createdAt : Time.Time;
+  };
+
+  type CommunityView = {
+    id : Text;
+    graphId : Text;
+    name : Text;
+    creator : Principal;
+    memberCount : Nat;
+    isMember : Bool;
+    isCreator : Bool;
+    hasInvite : Bool;
+    lastMessageAt : ?Time.Time;
+  };
+
+  type CommunityMessage = {
+    id : Nat;
+    communityId : Text;
+    author : Principal;
+    text : Text;
+    createdAt : Time.Time;
+  };
+
+  type CommunityMessageView = {
+    id : Nat;
+    communityId : Text;
+    author : Principal;
+    authorUsername : Text;
+    authorDisplayName : Text;
+    text : Text;
+    createdAt : Time.Time;
+  };
+
+  type PaginatedMessages = {
+    messages : [CommunityMessageView];
+    nextCursor : ?Nat;
+    hasMore : Bool;
+  };
+
+  type CommunityMemberView = {
+    principal : Principal;
+    username : Text;
+    displayName : Text;
+    isCreator : Bool;
+  };
+
+  type GateDecision = {
+    #allowed;
+    #denied : { message : Text; reason : Text; communityName : ?Text };
+  };
+
   // ── Principal link ──────────────────────────────────────────────────────────
   // One .xyz account per .app account. The pair is stored in both directions:
   // linkByXyz for acting on a user's behalf, appToXyz for attesting path
@@ -232,6 +319,15 @@ actor {
     costText : Text;
     interpNodeId : Text;
     path : [Text];
+    // Every node this write created, with its verbatim ref. The app returns it;
+    // we name it here to find a newly created swarm by ref.
+    nodes : [XyzCommitNode];
+  };
+
+  type XyzCommitNode = {
+    ref : Text;
+    nodeId : Text;
+    path : [Text];
   };
 
   type XyzPreviewResult = {
@@ -244,6 +340,7 @@ actor {
       reason : Text;
     };
     #notLinked : { message : Text; writerXyz : Principal };
+    #gate : { message : Text; reason : Text; communityName : ?Text };
     #throttled : { retryAfterMs : Nat };
     #err : { kind : XyzErrKind; message : Text };
   };
@@ -252,6 +349,9 @@ actor {
   // retried: a bounded-wait timeout does not cancel the callee, so an immediate
   // retry could race a still-running write. `#unknown` sends the user to
   // reconcile instead.
+  //
+  // `#gate` is ours too: xyz decides who may extend a swarm before it ever calls
+  // the app, because the app no longer evaluates any social rule.
   type XyzCommitOutcome = {
     #ok : XyzCommitOk;
     #insufficient : { message : Text; plan : XyzPlan; topUpPath : Text };
@@ -261,6 +361,7 @@ actor {
       pathCreators : [XyzPathCreator];
       reason : Text;
     };
+    #gate : { message : Text; reason : Text; communityName : ?Text };
     #notLinked : { message : Text; writerXyz : Principal };
     #stale : { message : Text; plan : XyzPlan };
     #conflict : { message : Text };
@@ -282,6 +383,10 @@ actor {
     canPublish : Bool;
     reason : ?Text;
     tokenNodeId : ?Text;
+    // Present when the local social gate would refuse this publish.
+    gateReason : ?Text;
+    // Machine-readable gate reason, so the client can offer a fix.
+    gateCode : ?Text;
   };
 
   type PaginatedPosts = {
@@ -332,6 +437,8 @@ actor {
     #follow;
     #repost : Nat;
     #quote : Nat;
+    // Community id, as a swarm node id.
+    #communityInvite : Text;
   };
 
   type Notification = {
@@ -384,6 +491,20 @@ actor {
   let linkByXyz : Map.Map<Principal, LinkState>;   // P_xyz -> linked .app account
   let appToXyz : Map.Map<Principal, Principal>;    // P_hv  -> P_xyz (attestation)
 
+  // ── Communities ─────────────────────────────────────────────────────────────
+  // Keyed by swarm node id, which the app resolves globally: ids are unique
+  // across graphs, so no graph id is needed in the key.
+  let communities : Map.Map<Text, Community>;
+  let communityMembers : Map.Map<Text, Map.Map<Principal, CommunityMember>>;
+  let memberCommunities : Map.Map<Principal, Map.Map<Text, Bool>>;
+  let communityInvites : Map.Map<Text, Map.Map<Principal, CommunityInvite>>;
+  let inviteIndex : Map.Map<Principal, Map.Map<Text, Bool>>;
+  let communityMessages : Map.Map<Text, Map.Map<Nat, CommunityMessage>>;
+  var nextCommunityMessageId : Nat;
+  // The swarm a post's token hangs from, captured when the post is created.
+  // Client-supplied, used only for the social write gate.
+  let postSwarm : Map.Map<Nat, SwarmCapture>;
+
   transient let linkInFlight = Map.empty<Principal, Bool>();
   // One in-flight write per post. The app is idempotent on (writeId, digest)
   // but not concurrency-safe: two simultaneous commits can both pass its
@@ -402,6 +523,15 @@ actor {
   transient let maxPostsPerUser : Nat = 10_000;
   transient let maxNotificationsPerUser : Nat = 50;
   transient let maxBranchPosts : Nat = 500;
+
+  // Communities. The invite tree would grow exponentially without a ceiling,
+  // and a community is a vouch pool for write permission, so it stays small.
+  transient let maxCommunityMembers : Nat = 150;
+  transient let maxCommunityInvites : Nat = 50;
+  transient let maxOutstandingInvitesPerMember : Nat = 2;
+  transient let maxMessageLength : Nat = 2_000;
+  transient let maxMessagesPerCommunity : Nat = 5_000;
+  transient let communityNameMax : Nat = 220;
 
   func validateMedia(mediaHash : ?Storage.ExternalBlob, mediaType : ?Text) {
     switch (mediaHash, mediaType) {
@@ -609,6 +739,26 @@ actor {
     if (ref.nodeName.size() > 300) { Runtime.trap("nodeName too long") };
     if (ref.path.size() > 600) { Runtime.trap("path too long") };
     if (not isKnownNodeType(ref.nodeType)) { Runtime.trap("Unknown nodeType") };
+    switch (ref.swarmNodeId) {
+      case (?id) {
+        if (id.size() == 0 or id.size() > 600) {
+          Runtime.trap("swarmNodeId length out of range");
+        };
+      };
+      case (null) {};
+    };
+    switch (ref.swarmCreator) {
+      case (?p) {
+        if (p.isAnonymous()) { Runtime.trap("Invalid swarm creator") };
+      };
+      case (null) {};
+    };
+    switch (ref.communityName) {
+      case (?n) {
+        if (n.size() > 400) { Runtime.trap("communityName too long") };
+      };
+      case (null) {};
+    };
   };
 
   func getGraphNodeMap(graphId : Text, nodeId : Text) : Map.Map<Nat, Bool> {
@@ -900,6 +1050,11 @@ actor {
         getGraphNodeMap(ref.graphId, ref.nodeId).add(childId, true);
       };
     };
+    // A reply inherits the token's swarm, so the gate applies to it as well.
+    switch (postSwarm.get(parentPostId)) {
+      case (?s) { postSwarm.add(childId, s) };
+      case (null) {};
+    };
   };
 
   // xyz weight of one token: 1 + likes + reposts - dislikes.
@@ -1038,6 +1193,7 @@ actor {
       case (null) {};
     };
     postChains.remove(id);
+    postSwarm.remove(id);
   };
 
   // Vote-deletes a token and its branch, unless the branch contains a token
@@ -1163,6 +1319,314 @@ actor {
       if (g.get(q) != null) { out.add(q) };
     };
     out.toArray();
+  };
+
+  // ── Communities (swarm-scoped write permission) ─────────────────────────────
+  // The app enforces structure only, so every social precondition for a write is
+  // decided here. A token may be published under a swarm when the writer is a
+  // member of that swarm's community, or a mutual of any current member. A swarm
+  // with no community yet falls back to its creator: the writer must be a mutual
+  // of the creator's linked xyz account, and the community is created with that
+  // creator as member #1. A swarm whose creator never linked is closed — there
+  // is nobody who could consent.
+
+  func follows(a : Principal, b : Principal) : Bool {
+    switch (following.get(a)) {
+      case (?m) { m.get(b) != null };
+      case (null) { false };
+    };
+  };
+
+  func mutualFollow(a : Principal, b : Principal) : Bool {
+    if (Principal.equal(a, b)) { return true };
+    follows(a, b) and follows(b, a);
+  };
+
+  func isCommunityMember(communityId : Text, p : Principal) : Bool {
+    switch (communityMembers.get(communityId)) {
+      case (?m) { m.get(p) != null };
+      case (null) { false };
+    };
+  };
+
+  func getCommunityMemberMap(communityId : Text) : Map.Map<Principal, CommunityMember> {
+    switch (communityMembers.get(communityId)) {
+      case (?m) { m };
+      case (null) {
+        let m = Map.empty<Principal, CommunityMember>();
+        communityMembers.add(communityId, m);
+        m;
+      };
+    };
+  };
+
+  func getCommunityInviteMap(communityId : Text) : Map.Map<Principal, CommunityInvite> {
+    switch (communityInvites.get(communityId)) {
+      case (?m) { m };
+      case (null) {
+        let m = Map.empty<Principal, CommunityInvite>();
+        communityInvites.add(communityId, m);
+        m;
+      };
+    };
+  };
+
+  func getCommunityMessageMap(communityId : Text) : Map.Map<Nat, CommunityMessage> {
+    switch (communityMessages.get(communityId)) {
+      case (?m) { m };
+      case (null) {
+        let m = Map.empty<Nat, CommunityMessage>();
+        communityMessages.add(communityId, m);
+        m;
+      };
+    };
+  };
+
+  func getMemberIndex(p : Principal) : Map.Map<Text, Bool> {
+    switch (memberCommunities.get(p)) {
+      case (?m) { m };
+      case (null) {
+        let m = Map.empty<Text, Bool>();
+        memberCommunities.add(p, m);
+        m;
+      };
+    };
+  };
+
+  func getInviteIndex(p : Principal) : Map.Map<Text, Bool> {
+    switch (inviteIndex.get(p)) {
+      case (?m) { m };
+      case (null) {
+        let m = Map.empty<Text, Bool>();
+        inviteIndex.add(p, m);
+        m;
+      };
+    };
+  };
+
+  func communityNameOf(curationName : Text, swarmName : Text) : Text {
+    let c = normalizeSpaces(curationName);
+    let s = normalizeSpaces(swarmName);
+    let joined = if (c.size() == 0) { s } else { c # " > " # s };
+    truncateChars(joined, communityNameMax);
+  };
+
+  func communityViewOf(c : Community, caller : Principal) : CommunityView {
+    {
+      id = c.id;
+      graphId = c.graphId;
+      name = c.name;
+      creator = c.creator;
+      memberCount = c.memberCount;
+      isMember = isCommunityMember(c.id, caller);
+      isCreator = Principal.equal(c.creator, caller);
+      hasInvite = switch (communityInvites.get(c.id)) {
+        case (?m) { m.get(caller) != null };
+        case (null) { false };
+      };
+      lastMessageAt = c.lastMessageAt;
+    };
+  };
+
+  // The swarm a post's token hangs from. A chain that creates a swarm is
+  // trivially allowed: its writer becomes member #1 when the write lands.
+  func swarmSubject(postId : Nat) : {
+    #creates;
+    #existing : SwarmCapture;
+    #unknown;
+  } {
+    switch (postChains.get(postId)) {
+      case (?spec) {
+        for (level in spec.levels.values()) {
+          if (level.nodeType == "swarm") { return #creates };
+        };
+        switch (spec.start) {
+          case (?start) {
+            switch (start.swarmNodeId) {
+              case (?id) {
+                return #existing({
+                  swarmNodeId = id;
+                  swarmCreator = start.swarmCreator;
+                  communityName = start.communityName;
+                });
+              };
+              case (null) {};
+            };
+          };
+          case (null) {};
+        };
+        return #unknown;
+      };
+      case (null) {};
+    };
+    switch (postSwarm.get(postId)) {
+      case (?s) { #existing(s) };
+      case (null) { #unknown };
+    };
+  };
+
+  func writeGateFor(postId : Nat, writer : Principal) : GateDecision {
+    switch (swarmSubject(postId)) {
+      case (#creates) { #allowed };
+      case (#unknown) {
+        #denied({
+          message = "This post has no enclosing swarm, so its write permission cannot be checked.";
+          reason = "noSwarm";
+          communityName = null;
+        });
+      };
+      case (#existing(s)) {
+        switch (communities.get(s.swarmNodeId)) {
+          case (?c) {
+            if (isCommunityMember(c.id, writer)) { return #allowed };
+            switch (communityMembers.get(c.id)) {
+              case (?members) {
+                for ((m, _) in members.entries()) {
+                  if (mutualFollow(writer, m)) { return #allowed };
+                };
+              };
+              case (null) {};
+            };
+            #denied({
+              message = "Publishing under " # c.name # " needs an invite from a member, or a mutual follow with one of them.";
+              reason = "notVouched";
+              communityName = ?c.name;
+            });
+          };
+          case (null) {
+            let creator = switch (s.swarmCreator) {
+              case (?p) { p };
+              case (null) {
+                return #denied({
+                  message = "This swarm has no community yet.";
+                  reason = "noCommunity";
+                  communityName = s.communityName;
+                });
+              };
+            };
+            switch (appToXyz.get(creator)) {
+              case (null) {
+                #denied({
+                  message = "This swarm has no community yet, and its creator has not linked a hyvmind.app account.";
+                  reason = "creatorUnlinked";
+                  communityName = s.communityName;
+                });
+              };
+              case (?creatorXyz) {
+                if (mutualFollow(writer, creatorXyz)) { #allowed } else {
+                  #denied({
+                    message = "This swarm has no community yet. Ask its creator to link or publish into it first.";
+                    reason = "notVouched";
+                    communityName = s.communityName;
+                  });
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+
+  func addCommunityMember(c : Community, p : Principal) : Community {
+    if (isCommunityMember(c.id, p)) { return c };
+    getCommunityMemberMap(c.id).add(p, { joinedAt = Time.now() });
+    getMemberIndex(p).add(c.id, true);
+    let inv = getCommunityInviteMap(c.id);
+    if (inv.get(p) != null) {
+      inv.remove(p);
+      getInviteIndex(p).remove(c.id);
+    };
+    let updated : Community = { c with memberCount = c.memberCount + 1 };
+    communities.add(c.id, updated);
+    updated;
+  };
+
+  func ensureCommunity(
+    swarmId : Text,
+    graphId : Text,
+    name : Text,
+    creator : Principal,
+    firstMember : Principal,
+  ) : Community {
+    switch (communities.get(swarmId)) {
+      case (?c) { return c };
+      case (null) {};
+    };
+    let created : Community = {
+      id = swarmId;
+      graphId;
+      name = communityNameOf("", if (name.size() == 0) { "Swarm" } else { name });
+      creator;
+      createdAt = Time.now();
+      memberCount = 0;
+      lastMessageAt = null;
+    };
+    communities.add(swarmId, created);
+    addCommunityMember(created, firstMember);
+  };
+
+  // Called once a write has landed. A created swarm mints its community with
+  // the writer as member #1; a citation into a community-less swarm mints it
+  // with that swarm's creator as member #1, which is what makes the chat appear
+  // as soon as the creator links.
+  func settleCommunity(postId : Nat, writerXyz : Principal, ref : ?GraphRef, ok : XyzCommitOk) {
+    let writerApp = switch (linkByXyz.get(writerXyz)) {
+      case (?s) { s.appPrincipal };
+      case (null) { return };
+    };
+    switch (postChains.get(postId)) {
+      case (?spec) {
+        var index = 0;
+        for (level in spec.levels.values()) {
+          if (level.nodeType == "swarm") {
+            let refText = "xyz:" # index.toText();
+            switch (ok.nodes.find(func(n : XyzCommitNode) : Bool { n.ref == refText })) {
+              case (?n) {
+                let curation = if (n.path.size() > 1) { n.path[0] } else { "" };
+                ignore ensureCommunity(
+                  n.nodeId,
+                  ok.publishedGraphId,
+                  communityNameOf(curation, level.name),
+                  writerApp,
+                  writerXyz,
+                );
+              };
+              case (null) {};
+            };
+          };
+          index += 1;
+        };
+      };
+      case (null) {};
+    };
+    switch (postSwarm.get(postId)) {
+      case (?s) {
+        switch (communities.get(s.swarmNodeId)) {
+          case (?_) {};
+          case (null) {
+            let creator = switch (s.swarmCreator) {
+              case (?p) { p };
+              case (null) { return };
+            };
+            let firstMember = switch (appToXyz.get(creator)) {
+              case (?p) { p };
+              case (null) { return };
+            };
+            let graphId = switch (ref) {
+              case (?r) { r.graphId };
+              case (null) { ok.publishedGraphId };
+            };
+            let name = switch (s.communityName) {
+              case (?n) { n };
+              case (null) { "Swarm" };
+            };
+            ignore ensureCommunity(s.swarmNodeId, graphId, name, creator, firstMember);
+          };
+        };
+      };
+      case (null) {};
+    };
   };
 
   // ── Title derivation ────────────────────────────────────────────────────────
@@ -1372,7 +1836,7 @@ actor {
     #ok((post, ref));
   };
 
-  func markPublished(postId : Nat, ref : ?GraphRef, ok : XyzCommitOk) {
+  func markPublished(postId : Nat, ref : ?GraphRef, ok : XyzCommitOk, writer : Principal) {
     // The post could have been vote-deleted while the commit was in flight;
     // never resurrect a graph ref for a post that no longer exists.
     if (posts.get(postId) == null) { return };
@@ -1425,6 +1889,7 @@ actor {
         getGraphNodeMap(ok.publishedGraphId, ok.interpNodeId).add(postId, true);
       };
     };
+    settleCommunity(postId, writer, ref, ok);
   };
 
   func addNotification(recipient : Principal, actor_ : Principal, notificationType : NotificationType) {
@@ -2041,6 +2506,16 @@ actor {
     };
     postGraphRefs.add(id, graphRef);
     getGraphNodeMap(ref.graphId, ref.nodeId).add(id, true);
+    switch (ref.swarmNodeId) {
+      case (?swarmNodeId) {
+        postSwarm.add(id, {
+          swarmNodeId;
+          swarmCreator = ref.swarmCreator;
+          communityName = ref.communityName;
+        });
+      };
+      case (null) {};
+    };
 
     toPostResponse(post, ?caller, false);
   };
@@ -2109,6 +2584,16 @@ actor {
         };
         postGraphRefs.add(id, graphRef);
         getGraphNodeMap(start.graphId, start.nodeId).add(id, true);
+        switch (start.swarmNodeId) {
+          case (?swarmNodeId) {
+            postSwarm.add(id, {
+              swarmNodeId;
+              swarmCreator = start.swarmCreator;
+              communityName = start.communityName;
+            });
+          };
+          case (null) {};
+        };
       };
       case (null) {};
     };
@@ -2825,6 +3310,11 @@ actor {
     } else {
       null;
     };
+    let gate = writeGateFor(postId, caller);
+    let (gateReason, gateCode) = switch (gate) {
+      case (#allowed) { (null, null) };
+      case (#denied(d)) { (?d.message, ?d.reason) };
+    };
     let cost = switch (chain) {
       case (?spec) { chainCost(spec) };
       case (null) { xyzCostTenths(nodeType) };
@@ -2836,9 +3326,11 @@ actor {
       nodeType;
       costTenths = cost;
       costText = formatTenths(cost);
-      canPublish = reason == null;
+      canPublish = reason == null and gateReason == null;
       reason;
       tokenNodeId;
+      gateReason;
+      gateCode;
     };
   };
 
@@ -2862,6 +3354,17 @@ actor {
         message = "This xyz account is not linked to a hyvmind.app account.";
         writerXyz = caller;
       });
+    };
+    // The app evaluates no social rule, so this is the only gate there is.
+    switch (writeGateFor(postId, caller)) {
+      case (#allowed) {};
+      case (#denied(d)) {
+        return #gate({
+          message = d.message;
+          reason = d.reason;
+          communityName = d.communityName;
+        });
+      };
     };
     let input = switch (await buildWriteInput(post, ref)) {
       case (#ok(i)) { i };
@@ -2903,6 +3406,16 @@ actor {
         writerXyz = caller;
       });
     };
+    switch (writeGateFor(postId, caller)) {
+      case (#allowed) {};
+      case (#denied(d)) {
+        return #gate({
+          message = d.message;
+          reason = d.reason;
+          communityName = d.communityName;
+        });
+      };
+    };
     if (not acquireWriteLock(postId)) {
       return #busy({ message = "A publish for this post is already in progress." });
     };
@@ -2929,7 +3442,7 @@ actor {
       };
       switch (result) {
         case (#ok(ok)) {
-          markPublished(postId, ref, ok);
+          markPublished(postId, ref, ok, caller);
           #ok(ok);
         };
         case (_) { result };
@@ -2988,7 +3501,7 @@ actor {
     };
     switch (remote) {
       case (?ok) {
-        markPublished(postId, ref, ok);
+        markPublished(postId, ref, ok, caller);
         #ok(ok);
       };
       case (null) {
@@ -3300,6 +3813,331 @@ actor {
         };
         count;
       };
+    };
+  };
+
+  // ── Community methods ───────────────────────────────────────────────────────
+
+  // A post created before swarms were captured has no enclosing swarm on record.
+  // The author can supply it once, from the same node read the composer uses;
+  // after that it is frozen like every other ref field. Without this, every
+  // citation that predates the gate could never be published.
+  public shared ({ caller }) func setPostSwarm(
+    postId : Nat,
+    swarmNodeId : Text,
+    swarmCreator : ?Principal,
+    communityName : ?Text,
+  ) : async { #ok; #err : Text } {
+    requireAuth(caller);
+    let post = switch (posts.get(postId)) {
+      case (?p) { p };
+      case (null) { return #err("Post not found") };
+    };
+    if (post.author != caller) { return #err("Only the author can set this") };
+    switch (postGraphRefs.get(postId)) {
+      case (null) { return #err("Only graph posts have an enclosing swarm") };
+      case (?r) {
+        if (r.tokenNodeId != null) { return #err("This post is already published") };
+      };
+    };
+    switch (postSwarm.get(postId)) {
+      case (?_) { return #ok };
+      case (null) {};
+    };
+    if (swarmNodeId.size() == 0 or swarmNodeId.size() > 600) {
+      return #err("swarmNodeId length out of range");
+    };
+    switch (swarmCreator) {
+      case (?p) {
+        if (p.isAnonymous()) { return #err("Invalid swarm creator") };
+      };
+      case (null) {};
+    };
+    switch (communityName) {
+      case (?n) {
+        if (n.size() > 400) { return #err("communityName too long") };
+      };
+      case (null) {};
+    };
+    postSwarm.add(postId, { swarmNodeId; swarmCreator; communityName });
+    #ok;
+  };
+
+  func profileNames(p : Principal) : (Text, Text) {
+    switch (userProfiles.get(p)) {
+      case (?profile) { (profile.username, profile.displayName) };
+      case (null) { ("unknown", "Unknown") };
+    };
+  };
+
+  func messageView(m : CommunityMessage) : CommunityMessageView {
+    let (username, displayName) = profileNames(m.author);
+    {
+      id = m.id;
+      communityId = m.communityId;
+      author = m.author;
+      authorUsername = username;
+      authorDisplayName = displayName;
+      text = m.text;
+      createdAt = m.createdAt;
+    };
+  };
+
+  func inviteMember(
+    c : Community,
+    inviter : Principal,
+    target : Principal,
+  ) : { #ok; #err : Text } {
+    if (not isCommunityMember(c.id, inviter)) { return #err("Only members can invite") };
+    if (isCommunityMember(c.id, target)) { return #err("Already a member") };
+    if (Principal.equal(inviter, target)) { return #err("You are already a member") };
+    if (isBlockedBidirectional(inviter, target)) { return #err("Cannot invite this user") };
+    if (c.memberCount >= maxCommunityMembers) { return #err("This community is full") };
+    let invites = getCommunityInviteMap(c.id);
+    if (invites.get(target) != null) { return #err("Already invited") };
+    if (invites.size() >= maxCommunityInvites) {
+      return #err("Too many pending invites in this community");
+    };
+    var mine = 0;
+    for ((_, inv) in invites.entries()) {
+      if (Principal.equal(inv.invitedBy, inviter)) { mine += 1 };
+    };
+    if (mine >= maxOutstandingInvitesPerMember) {
+      return #err(
+        "You can have " # maxOutstandingInvitesPerMember.toText() # " pending invites in this community"
+      );
+    };
+    invites.add(target, { invitedBy = inviter; createdAt = Time.now() });
+    getInviteIndex(target).add(c.id, true);
+    addNotification(target, inviter, #communityInvite(c.id));
+    #ok;
+  };
+
+  // A mention in a community message is an invite. Mentions of non-members are
+  // ignored once the caps are reached; the message itself still posts.
+  func inviteMentions(c : Community, inviter : Principal, text : Text) {
+    for (username in extractTokens(text, '@').values()) {
+      switch (usernameToUser.get(username)) {
+        case (?target) {
+          if (not isCommunityMember(c.id, target)) {
+            ignore inviteMember(c, inviter, target);
+          };
+        };
+        case (null) {};
+      };
+    };
+  };
+
+  public query ({ caller }) func getMyCommunities() : async [CommunityView] {
+    let out = List.empty<CommunityView>();
+    switch (memberCommunities.get(caller)) {
+      case (?ids) {
+        for ((id, _) in ids.entries()) {
+          switch (communities.get(id)) {
+            case (?c) { out.add(communityViewOf(c, caller)) };
+            case (null) {};
+          };
+        };
+      };
+      case (null) {};
+    };
+    out.toArray();
+  };
+
+  public query ({ caller }) func getMyCommunityInvites() : async [CommunityView] {
+    let out = List.empty<CommunityView>();
+    switch (inviteIndex.get(caller)) {
+      case (?ids) {
+        for ((id, _) in ids.entries()) {
+          switch (communities.get(id)) {
+            case (?c) { out.add(communityViewOf(c, caller)) };
+            case (null) {};
+          };
+        };
+      };
+      case (null) {};
+    };
+    out.toArray();
+  };
+
+  // Visible to members and invitees only: the chat is not public.
+  public query ({ caller }) func getCommunity(communityId : Text) : async ?CommunityView {
+    switch (communities.get(communityId)) {
+      case (?c) {
+        let invited = switch (communityInvites.get(c.id)) {
+          case (?m) { m.get(caller) != null };
+          case (null) { false };
+        };
+        if (not isCommunityMember(c.id, caller) and not invited) { return null };
+        ?communityViewOf(c, caller);
+      };
+      case (null) { null };
+    };
+  };
+
+  public query ({ caller }) func getCommunityMessages(
+    communityId : Text,
+    cursor : ?Nat,
+    limit : Nat,
+  ) : async PaginatedMessages {
+    let empty : PaginatedMessages = {
+      messages = [];
+      nextCursor = null;
+      hasMore = false;
+    };
+    if (not isCommunityMember(communityId, caller)) { return empty };
+    let store = switch (communityMessages.get(communityId)) {
+      case (?m) { m };
+      case (null) { return empty };
+    };
+    let effectiveLimit = if (limit == 0 or limit > 50) { 20 } else { limit };
+    let upper = switch (cursor) {
+      case (?c) { c };
+      case (null) { nextCommunityMessageId };
+    };
+    let ids = List.empty<Nat>();
+    for ((id, _) in store.entries()) {
+      if (id < upper) { ids.add(id) };
+    };
+    let arr = ids.toArray();
+    let total = arr.size();
+    let startIndex = if (total <= effectiveLimit) { 0 } else { total - effectiveLimit };
+    let out = List.empty<CommunityMessageView>();
+    var i = total;
+    while (i > startIndex) {
+      i -= 1;
+      switch (store.get(arr[i])) {
+        case (?m) { out.add(messageView(m)) };
+        case (null) {};
+      };
+    };
+    {
+      messages = out.toArray();
+      nextCursor = if (startIndex > 0) { ?arr[startIndex] } else { null };
+      hasMore = startIndex > 0;
+    };
+  };
+
+  public shared ({ caller }) func sendCommunityMessage(
+    communityId : Text,
+    text : Text,
+  ) : async { #ok : CommunityMessageView; #err : Text } {
+    requireAuth(caller);
+    let c = switch (communities.get(communityId)) {
+      case (?c) { c };
+      case (null) { return #err("Community not found") };
+    };
+    if (not isCommunityMember(c.id, caller)) {
+      return #err("Join this community before posting in it");
+    };
+    if (text.size() == 0) { return #err("Message is empty") };
+    if (text.size() > maxMessageLength) {
+      return #err("Message is too long (" # maxMessageLength.toText() # " characters max)");
+    };
+    let store = getCommunityMessageMap(c.id);
+    if (store.size() >= maxMessagesPerCommunity) {
+      return #err("This community has reached its message limit");
+    };
+    let id = nextCommunityMessageId;
+    nextCommunityMessageId += 1;
+    let now = Time.now();
+    let msg : CommunityMessage = {
+      id;
+      communityId = c.id;
+      author = caller;
+      text;
+      createdAt = now;
+    };
+    store.add(id, msg);
+    communities.add(c.id, { c with lastMessageAt = ?now });
+    inviteMentions(c, caller, text);
+    #ok(messageView(msg));
+  };
+
+  public shared ({ caller }) func inviteToCommunity(
+    communityId : Text,
+    target : Principal,
+  ) : async { #ok; #err : Text } {
+    requireAuth(caller);
+    if (target.isAnonymous()) { return #err("Invalid user") };
+    let c = switch (communities.get(communityId)) {
+      case (?c) { c };
+      case (null) { return #err("Community not found") };
+    };
+    inviteMember(c, caller, target);
+  };
+
+  public shared ({ caller }) func acceptCommunityInvite(
+    communityId : Text,
+  ) : async { #ok : CommunityView; #err : Text } {
+    requireAuth(caller);
+    let c = switch (communities.get(communityId)) {
+      case (?c) { c };
+      case (null) { return #err("Community not found") };
+    };
+    let invites = switch (communityInvites.get(c.id)) {
+      case (?m) { m };
+      case (null) { return #err("No invite for this community") };
+    };
+    if (invites.get(caller) == null) { return #err("No invite for this community") };
+    if (c.memberCount >= maxCommunityMembers) { return #err("This community is full") };
+    let updated = addCommunityMember(c, caller);
+    #ok(communityViewOf(updated, caller));
+  };
+
+  public shared ({ caller }) func declineCommunityInvite(communityId : Text) : async () {
+    requireAuth(caller);
+    switch (communityInvites.get(communityId)) {
+      case (?m) { m.remove(caller) };
+      case (null) {};
+    };
+    switch (inviteIndex.get(caller)) {
+      case (?m) { m.remove(communityId) };
+      case (null) {};
+    };
+  };
+
+  public query ({ caller }) func getCommunityMembers(
+    communityId : Text,
+    offset : Nat,
+    limit : Nat,
+  ) : async {
+    members : [CommunityMemberView];
+    nextOffset : ?Nat;
+    hasMore : Bool;
+  } {
+    let empty = { members = []; nextOffset = null; hasMore = false };
+    if (not isCommunityMember(communityId, caller)) { return empty };
+    let c = switch (communities.get(communityId)) {
+      case (?c) { c };
+      case (null) { return empty };
+    };
+    let effectiveLimit = if (limit == 0 or limit > 100) { 50 } else { limit };
+    let all = List.empty<CommunityMemberView>();
+    switch (communityMembers.get(communityId)) {
+      case (?m) {
+        for ((p, _) in m.entries()) {
+          let (username, displayName) = profileNames(p);
+          all.add({
+            principal = p;
+            username;
+            displayName;
+            isCreator = Principal.equal(c.creator, p);
+          });
+        };
+      };
+      case (null) {};
+    };
+    // Map order is key order (principal), which is stable across calls; sorting
+    // by username would need a mutable array for an at-most-150 list.
+    let sorted = all.toArray();
+    let total = sorted.size();
+    let start = if (offset >= total) { total } else { offset };
+    let end = if (start + effectiveLimit > total) { total } else { start + effectiveLimit };
+    {
+      members = sorted.sliceToArray(start, end);
+      nextOffset = if (end < total) { ?end } else { null };
+      hasMore = end < total;
     };
   };
 };

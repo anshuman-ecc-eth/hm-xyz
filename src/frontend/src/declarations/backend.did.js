@@ -41,15 +41,33 @@ export const Error = IDL.Variant({
   }),
 });
 export const Result = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
+export const Time = IDL.Int;
+export const CommunityView = IDL.Record({
+  'id' : IDL.Text,
+  'creator' : IDL.Principal,
+  'isCreator' : IDL.Bool,
+  'lastMessageAt' : IDL.Opt(Time),
+  'name' : IDL.Text,
+  'memberCount' : IDL.Nat,
+  'isMember' : IDL.Bool,
+  'graphId' : IDL.Text,
+  'hasInvite' : IDL.Bool,
+});
 export const UserRole = IDL.Variant({
   'admin' : IDL.Null,
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const XyzCommitNode = IDL.Record({
+  'ref' : IDL.Text,
+  'nodeId' : IDL.Text,
+  'path' : IDL.Vec(IDL.Text),
+});
 export const XyzCommitOk = IDL.Record({
   'costText' : IDL.Text,
   'cost' : IDL.Int,
   'path' : IDL.Vec(IDL.Text),
+  'nodes' : IDL.Vec(XyzCommitNode),
   'interpNodeId' : IDL.Text,
   'revision' : IDL.Nat,
   'publishedGraphId' : IDL.Text,
@@ -81,6 +99,11 @@ export const XyzCommitOutcome = IDL.Variant({
   'err' : IDL.Record({ 'kind' : XyzErrKind, 'message' : IDL.Text }),
   'conflict' : IDL.Record({ 'message' : IDL.Text }),
   'busy' : IDL.Record({ 'message' : IDL.Text }),
+  'gate' : IDL.Record({
+    'communityName' : IDL.Opt(IDL.Text),
+    'message' : IDL.Text,
+    'reason' : IDL.Text,
+  }),
   'blocked' : IDL.Record({
     'plan' : XyzPlan,
     'pathCreators' : IDL.Vec(XyzPathCreator),
@@ -101,7 +124,6 @@ export const XyzCommitOutcome = IDL.Variant({
   }),
   'unknown' : IDL.Record({ 'message' : IDL.Text, 'writeId' : IDL.Text }),
 });
-export const Time = IDL.Int;
 export const LinkState = IDL.Record({
   'linkedAt' : Time,
   'appPrincipal' : IDL.Principal,
@@ -112,6 +134,9 @@ export const GraphRefInput = IDL.Record({
   'nodeId' : IDL.Text,
   'path' : IDL.Text,
   'graphId' : IDL.Text,
+  'swarmCreator' : IDL.Opt(IDL.Principal),
+  'communityName' : IDL.Opt(IDL.Text),
+  'swarmNodeId' : IDL.Opt(IDL.Text),
   'nodeName' : IDL.Text,
   'nodeType' : IDL.Text,
   'graphName' : IDL.Text,
@@ -180,6 +205,26 @@ export const PostResponse = IDL.Record({
   'authorDisplayName' : IDL.Text,
   'isLikedByCurrentUser' : IDL.Bool,
 });
+export const CommunityMemberView = IDL.Record({
+  'principal' : IDL.Principal,
+  'isCreator' : IDL.Bool,
+  'username' : IDL.Text,
+  'displayName' : IDL.Text,
+});
+export const CommunityMessageView = IDL.Record({
+  'id' : IDL.Nat,
+  'authorUsername' : IDL.Text,
+  'communityId' : IDL.Text,
+  'createdAt' : Time,
+  'text' : IDL.Text,
+  'author' : IDL.Principal,
+  'authorDisplayName' : IDL.Text,
+});
+export const PaginatedMessages = IDL.Record({
+  'hasMore' : IDL.Bool,
+  'messages' : IDL.Vec(CommunityMessageView),
+  'nextCursor' : IDL.Opt(IDL.Nat),
+});
 export const FollowUserResponse = IDL.Record({
   'principal' : IDL.Principal,
   'username' : IDL.Text,
@@ -198,6 +243,7 @@ export const PaginatedPosts = IDL.Record({
 });
 export const NotificationType = IDL.Variant({
   'repost' : IDL.Nat,
+  'communityInvite' : IDL.Text,
   'like' : IDL.Nat,
   'quote' : IDL.Nat,
   'mention' : IDL.Nat,
@@ -259,14 +305,21 @@ export const XyzWriteDraft = IDL.Record({
   'costText' : IDL.Text,
   'canPublish' : IDL.Bool,
   'costTenths' : IDL.Nat,
+  'gateCode' : IDL.Opt(IDL.Text),
   'writeId' : IDL.Text,
   'tokenNodeId' : IDL.Opt(IDL.Text),
+  'gateReason' : IDL.Opt(IDL.Text),
   'nodeType' : IDL.Text,
   'reason' : IDL.Opt(IDL.Text),
   'postId' : IDL.Nat,
 });
 export const XyzPreviewResult = IDL.Variant({
   'err' : IDL.Record({ 'kind' : XyzErrKind, 'message' : IDL.Text }),
+  'gate' : IDL.Record({
+    'communityName' : IDL.Opt(IDL.Text),
+    'message' : IDL.Text,
+    'reason' : IDL.Text,
+  }),
   'blocked' : IDL.Record({
     'plan' : XyzPlan,
     'pathCreators' : IDL.Vec(XyzPathCreator),
@@ -321,6 +374,11 @@ export const idlService = IDL.Service({
   '_initialize_access_control' : IDL.Func([], [], []),
   '_internet_identity_sign_in_finish' : IDL.Func([], [Result], []),
   '_internet_identity_sign_in_start' : IDL.Func([], [IDL.Vec(IDL.Nat8)], []),
+  'acceptCommunityInvite' : IDL.Func(
+      [IDL.Text],
+      [IDL.Variant({ 'ok' : CommunityView, 'err' : IDL.Text })],
+      [],
+    ),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'blockUser' : IDL.Func([IDL.Principal], [], []),
   'checkUsernameAvailability' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
@@ -350,12 +408,30 @@ export const idlService = IDL.Service({
       [PostResponse],
       [],
     ),
+  'declineCommunityInvite' : IDL.Func([IDL.Text], [], []),
   'deletePost' : IDL.Func([IDL.Nat], [], []),
   'dislikePost' : IDL.Func([IDL.Nat], [], []),
   'editPost' : IDL.Func([IDL.Nat, IDL.Text], [PostResponse], []),
   'followUser' : IDL.Func([IDL.Principal], [], []),
   'getAppBackend' : IDL.Func([], [IDL.Text], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+  'getCommunity' : IDL.Func([IDL.Text], [IDL.Opt(CommunityView)], ['query']),
+  'getCommunityMembers' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Nat],
+      [
+        IDL.Record({
+          'nextOffset' : IDL.Opt(IDL.Nat),
+          'hasMore' : IDL.Bool,
+          'members' : IDL.Vec(CommunityMemberView),
+        }),
+      ],
+      ['query'],
+    ),
+  'getCommunityMessages' : IDL.Func(
+      [IDL.Text, IDL.Opt(IDL.Nat), IDL.Nat],
+      [PaginatedMessages],
+      ['query'],
+    ),
   'getFollowers' : IDL.Func(
       [IDL.Text, IDL.Nat, IDL.Nat],
       [PaginatedFollows],
@@ -382,6 +458,8 @@ export const idlService = IDL.Service({
       [],
     ),
   'getMyAppLink' : IDL.Func([], [IDL.Opt(LinkState)], ['query']),
+  'getMyCommunities' : IDL.Func([], [IDL.Vec(CommunityView)], ['query']),
+  'getMyCommunityInvites' : IDL.Func([], [IDL.Vec(CommunityView)], ['query']),
   'getNotifications' : IDL.Func(
       [IDL.Opt(IDL.Nat), IDL.Nat],
       [PaginatedNotifications],
@@ -436,6 +514,11 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getXyzWriteDraft' : IDL.Func([IDL.Nat], [IDL.Opt(XyzWriteDraft)], ['query']),
+  'inviteToCommunity' : IDL.Func(
+      [IDL.Text, IDL.Principal],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'likePost' : IDL.Func([IDL.Nat], [], []),
   'markAllNotificationsRead' : IDL.Func([], [], []),
@@ -468,6 +551,16 @@ export const idlService = IDL.Service({
       [IDL.Text, IDL.Nat],
       [IDL.Vec(UserProfileResponse)],
       ['query'],
+    ),
+  'sendCommunityMessage' : IDL.Func(
+      [IDL.Text, IDL.Text],
+      [IDL.Variant({ 'ok' : CommunityMessageView, 'err' : IDL.Text })],
+      [],
+    ),
+  'setPostSwarm' : IDL.Func(
+      [IDL.Nat, IDL.Text, IDL.Opt(IDL.Principal), IDL.Opt(IDL.Text)],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
     ),
   'setProfile' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
   'unblockUser' : IDL.Func([IDL.Principal], [], []),
@@ -521,15 +614,33 @@ export const idlFactory = ({ IDL }) => {
     }),
   });
   const Result = IDL.Variant({ 'ok' : IDL.Null, 'err' : Error });
+  const Time = IDL.Int;
+  const CommunityView = IDL.Record({
+    'id' : IDL.Text,
+    'creator' : IDL.Principal,
+    'isCreator' : IDL.Bool,
+    'lastMessageAt' : IDL.Opt(Time),
+    'name' : IDL.Text,
+    'memberCount' : IDL.Nat,
+    'isMember' : IDL.Bool,
+    'graphId' : IDL.Text,
+    'hasInvite' : IDL.Bool,
+  });
   const UserRole = IDL.Variant({
     'admin' : IDL.Null,
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
+  const XyzCommitNode = IDL.Record({
+    'ref' : IDL.Text,
+    'nodeId' : IDL.Text,
+    'path' : IDL.Vec(IDL.Text),
+  });
   const XyzCommitOk = IDL.Record({
     'costText' : IDL.Text,
     'cost' : IDL.Int,
     'path' : IDL.Vec(IDL.Text),
+    'nodes' : IDL.Vec(XyzCommitNode),
     'interpNodeId' : IDL.Text,
     'revision' : IDL.Nat,
     'publishedGraphId' : IDL.Text,
@@ -561,6 +672,11 @@ export const idlFactory = ({ IDL }) => {
     'err' : IDL.Record({ 'kind' : XyzErrKind, 'message' : IDL.Text }),
     'conflict' : IDL.Record({ 'message' : IDL.Text }),
     'busy' : IDL.Record({ 'message' : IDL.Text }),
+    'gate' : IDL.Record({
+      'communityName' : IDL.Opt(IDL.Text),
+      'message' : IDL.Text,
+      'reason' : IDL.Text,
+    }),
     'blocked' : IDL.Record({
       'plan' : XyzPlan,
       'pathCreators' : IDL.Vec(XyzPathCreator),
@@ -581,7 +697,6 @@ export const idlFactory = ({ IDL }) => {
     }),
     'unknown' : IDL.Record({ 'message' : IDL.Text, 'writeId' : IDL.Text }),
   });
-  const Time = IDL.Int;
   const LinkState = IDL.Record({
     'linkedAt' : Time,
     'appPrincipal' : IDL.Principal,
@@ -592,6 +707,9 @@ export const idlFactory = ({ IDL }) => {
     'nodeId' : IDL.Text,
     'path' : IDL.Text,
     'graphId' : IDL.Text,
+    'swarmCreator' : IDL.Opt(IDL.Principal),
+    'communityName' : IDL.Opt(IDL.Text),
+    'swarmNodeId' : IDL.Opt(IDL.Text),
     'nodeName' : IDL.Text,
     'nodeType' : IDL.Text,
     'graphName' : IDL.Text,
@@ -660,6 +778,26 @@ export const idlFactory = ({ IDL }) => {
     'authorDisplayName' : IDL.Text,
     'isLikedByCurrentUser' : IDL.Bool,
   });
+  const CommunityMemberView = IDL.Record({
+    'principal' : IDL.Principal,
+    'isCreator' : IDL.Bool,
+    'username' : IDL.Text,
+    'displayName' : IDL.Text,
+  });
+  const CommunityMessageView = IDL.Record({
+    'id' : IDL.Nat,
+    'authorUsername' : IDL.Text,
+    'communityId' : IDL.Text,
+    'createdAt' : Time,
+    'text' : IDL.Text,
+    'author' : IDL.Principal,
+    'authorDisplayName' : IDL.Text,
+  });
+  const PaginatedMessages = IDL.Record({
+    'hasMore' : IDL.Bool,
+    'messages' : IDL.Vec(CommunityMessageView),
+    'nextCursor' : IDL.Opt(IDL.Nat),
+  });
   const FollowUserResponse = IDL.Record({
     'principal' : IDL.Principal,
     'username' : IDL.Text,
@@ -678,6 +816,7 @@ export const idlFactory = ({ IDL }) => {
   });
   const NotificationType = IDL.Variant({
     'repost' : IDL.Nat,
+    'communityInvite' : IDL.Text,
     'like' : IDL.Nat,
     'quote' : IDL.Nat,
     'mention' : IDL.Nat,
@@ -736,14 +875,21 @@ export const idlFactory = ({ IDL }) => {
     'costText' : IDL.Text,
     'canPublish' : IDL.Bool,
     'costTenths' : IDL.Nat,
+    'gateCode' : IDL.Opt(IDL.Text),
     'writeId' : IDL.Text,
     'tokenNodeId' : IDL.Opt(IDL.Text),
+    'gateReason' : IDL.Opt(IDL.Text),
     'nodeType' : IDL.Text,
     'reason' : IDL.Opt(IDL.Text),
     'postId' : IDL.Nat,
   });
   const XyzPreviewResult = IDL.Variant({
     'err' : IDL.Record({ 'kind' : XyzErrKind, 'message' : IDL.Text }),
+    'gate' : IDL.Record({
+      'communityName' : IDL.Opt(IDL.Text),
+      'message' : IDL.Text,
+      'reason' : IDL.Text,
+    }),
     'blocked' : IDL.Record({
       'plan' : XyzPlan,
       'pathCreators' : IDL.Vec(XyzPathCreator),
@@ -798,6 +944,11 @@ export const idlFactory = ({ IDL }) => {
     '_initialize_access_control' : IDL.Func([], [], []),
     '_internet_identity_sign_in_finish' : IDL.Func([], [Result], []),
     '_internet_identity_sign_in_start' : IDL.Func([], [IDL.Vec(IDL.Nat8)], []),
+    'acceptCommunityInvite' : IDL.Func(
+        [IDL.Text],
+        [IDL.Variant({ 'ok' : CommunityView, 'err' : IDL.Text })],
+        [],
+      ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'blockUser' : IDL.Func([IDL.Principal], [], []),
     'checkUsernameAvailability' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
@@ -827,12 +978,30 @@ export const idlFactory = ({ IDL }) => {
         [PostResponse],
         [],
       ),
+    'declineCommunityInvite' : IDL.Func([IDL.Text], [], []),
     'deletePost' : IDL.Func([IDL.Nat], [], []),
     'dislikePost' : IDL.Func([IDL.Nat], [], []),
     'editPost' : IDL.Func([IDL.Nat, IDL.Text], [PostResponse], []),
     'followUser' : IDL.Func([IDL.Principal], [], []),
     'getAppBackend' : IDL.Func([], [IDL.Text], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+    'getCommunity' : IDL.Func([IDL.Text], [IDL.Opt(CommunityView)], ['query']),
+    'getCommunityMembers' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Nat],
+        [
+          IDL.Record({
+            'nextOffset' : IDL.Opt(IDL.Nat),
+            'hasMore' : IDL.Bool,
+            'members' : IDL.Vec(CommunityMemberView),
+          }),
+        ],
+        ['query'],
+      ),
+    'getCommunityMessages' : IDL.Func(
+        [IDL.Text, IDL.Opt(IDL.Nat), IDL.Nat],
+        [PaginatedMessages],
+        ['query'],
+      ),
     'getFollowers' : IDL.Func(
         [IDL.Text, IDL.Nat, IDL.Nat],
         [PaginatedFollows],
@@ -859,6 +1028,8 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'getMyAppLink' : IDL.Func([], [IDL.Opt(LinkState)], ['query']),
+    'getMyCommunities' : IDL.Func([], [IDL.Vec(CommunityView)], ['query']),
+    'getMyCommunityInvites' : IDL.Func([], [IDL.Vec(CommunityView)], ['query']),
     'getNotifications' : IDL.Func(
         [IDL.Opt(IDL.Nat), IDL.Nat],
         [PaginatedNotifications],
@@ -917,6 +1088,11 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Opt(XyzWriteDraft)],
         ['query'],
       ),
+    'inviteToCommunity' : IDL.Func(
+        [IDL.Text, IDL.Principal],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'likePost' : IDL.Func([IDL.Nat], [], []),
     'markAllNotificationsRead' : IDL.Func([], [], []),
@@ -949,6 +1125,16 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Text, IDL.Nat],
         [IDL.Vec(UserProfileResponse)],
         ['query'],
+      ),
+    'sendCommunityMessage' : IDL.Func(
+        [IDL.Text, IDL.Text],
+        [IDL.Variant({ 'ok' : CommunityMessageView, 'err' : IDL.Text })],
+        [],
+      ),
+    'setPostSwarm' : IDL.Func(
+        [IDL.Nat, IDL.Text, IDL.Opt(IDL.Principal), IDL.Opt(IDL.Text)],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
       ),
     'setProfile' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
     'unblockUser' : IDL.Func([IDL.Principal], [], []),

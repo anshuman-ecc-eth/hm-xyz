@@ -13,10 +13,13 @@ import {
   Quote,
   Repeat2,
   UserPlus,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 import {
+  useAcceptCommunityInvite,
+  useDeclineCommunityInvite,
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
   useNotifications,
@@ -74,6 +77,15 @@ function getNotificationInfo(notificationType: Record<string, unknown>) {
       postId: notificationType.quote as bigint,
     };
   }
+  if ("communityInvite" in notificationType) {
+    return {
+      icon: Users,
+      iconClassName: "text-primary",
+      text: "invited you to a community",
+      postId: null,
+      communityId: notificationType.communityInvite as string,
+    };
+  }
   return {
     icon: Heart,
     iconClassName: "text-muted-foreground",
@@ -96,6 +108,9 @@ export function NotificationsPage() {
   const { mutate: markRead } = useMarkNotificationRead();
   const { mutate: markAllRead, isPending: isMarkingAllRead } =
     useMarkAllNotificationsRead();
+  const { mutate: joinCommunity, isPending: isJoiningCommunity } =
+    useAcceptCommunityInvite();
+  const { mutate: declineCommunity } = useDeclineCommunityInvite();
 
   const notifications =
     notifData?.pages.flatMap((page) => page.notifications) ?? [];
@@ -218,6 +233,49 @@ export function NotificationsPage() {
                 )}
               </>
             );
+
+            if ("communityId" in info) {
+              const communityId = info.communityId as string;
+              return (
+                <div key={notif.id.toString()} className={linkClassName}>
+                  {content}
+                  <div className="flex shrink-0 flex-col gap-1.5">
+                    <Button
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      disabled={isJoiningCommunity}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        joinCommunity(communityId, {
+                          onSuccess: () =>
+                            markRead(notif.id, {
+                              onError: () => undefined,
+                            }),
+                          onError: () =>
+                            toast.error("Could not join community"),
+                        });
+                      }}
+                    >
+                      Join
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        declineCommunity(communityId, {
+                          onError: () =>
+                            toast.error("Could not decline invite"),
+                        });
+                      }}
+                    >
+                      Decline
+                    </Button>
+                  </div>
+                </div>
+              );
+            }
 
             return info.postId !== null ? (
               <Link

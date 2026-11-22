@@ -52,6 +52,15 @@ export interface ResolvedNode extends ApiNode {
   graphName: string;
   path: string;
   segments: string[];
+  /**
+   * The swarm this node hangs from — itself, for a swarm. Write permission is
+   * scoped to that swarm's community, so every citation carries it. Null only
+   * for a curation, which has no swarm above it.
+   */
+  swarmNodeId: string | null;
+  swarmCreator: string | null;
+  /** "Curation > Swarm", the community's display name. */
+  swarmLabel: string | null;
 }
 
 export const NODE_TYPE_LABEL: Record<NodeType, string> = {
@@ -173,12 +182,29 @@ export function resolveNodes(
 
   return nodes.map((node) => {
     const { segments, complete } = resolve(node.id, 0);
+    // Walk up to the nearest swarm, including the node itself. Ids are opaque,
+    // so this is the only way to know which community governs a write.
+    let swarm: ApiNode | undefined;
+    let cursor: ApiNode | undefined = node;
+    let guard = 0;
+    while (cursor && guard < 12) {
+      guard += 1;
+      if (cursor.type === "swarm") {
+        swarm = cursor;
+        break;
+      }
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+    }
+    const curation = segments.length > 0 ? segments[0] : node.name;
     return {
       ...node,
       graphId: graph.id,
       graphName: graph.name,
       segments,
       path: (complete ? segments : [...segments, "…"]).join(" › "),
+      swarmNodeId: swarm?.id ?? null,
+      swarmCreator: swarm?.creator ?? null,
+      swarmLabel: swarm ? `${curation} > ${swarm.name}` : null,
     };
   });
 }

@@ -1225,3 +1225,186 @@ export function useReconcileXyzWrite() {
     },
   });
 }
+
+// ── Communities ──────────────────────────────────────────────────────────────
+// One community per swarm. Membership is the write permission for that swarm,
+// so these queries drive both the chat and the publish gate.
+
+export function useMyCommunities() {
+  const { actor, isFetching } = useActor(createActor);
+  const { identity } = useInternetIdentity();
+
+  return useQuery({
+    queryKey: ["communities", identity?.getPrincipal().toString()],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.getMyCommunities();
+    },
+    enabled: !!actor && !isFetching && !!identity,
+  });
+}
+
+export function useMyCommunityInvites() {
+  const { actor, isFetching } = useActor(createActor);
+  const { identity } = useInternetIdentity();
+
+  return useQuery({
+    queryKey: ["communityInvites", identity?.getPrincipal().toString()],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.getMyCommunityInvites();
+    },
+    enabled: !!actor && !isFetching && !!identity,
+  });
+}
+
+export function useCommunity(communityId: string) {
+  const { actor, isFetching } = useActor(createActor);
+  const { identity } = useInternetIdentity();
+
+  return useQuery({
+    queryKey: ["community", communityId],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not ready");
+      const result = await actor.getCommunity(communityId);
+      return result ?? null;
+    },
+    enabled: !!actor && !isFetching && !!identity && communityId.length > 0,
+  });
+}
+
+export function useCommunityMessages(communityId: string) {
+  const { actor, isFetching } = useActor(createActor);
+
+  return useInfiniteQuery({
+    queryKey: ["communityMessages", communityId],
+    queryFn: async ({ pageParam }) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.getCommunityMessages(communityId, pageParam, 30n);
+    },
+    initialPageParam: null as bigint | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: !!actor && !isFetching && communityId.length > 0,
+  });
+}
+
+export function useCommunityMembers(communityId: string) {
+  const { actor, isFetching } = useActor(createActor);
+
+  return useQuery({
+    queryKey: ["communityMembers", communityId],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.getCommunityMembers(communityId, 0n, 100n);
+    },
+    enabled: !!actor && !isFetching && communityId.length > 0,
+  });
+}
+
+export function useSendCommunityMessage(communityId: string) {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (text: string) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.sendCommunityMessage(communityId, text);
+    },
+    onSuccess: (result) => {
+      if (result.__kind__ !== "ok") return;
+      queryClient.invalidateQueries({
+        queryKey: ["communityMessages", communityId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["community", communityId] });
+      queryClient.invalidateQueries({ queryKey: ["communities"] });
+      queryClient.invalidateQueries({ queryKey: ["communityInvites"] });
+    },
+  });
+}
+
+export function useAcceptCommunityInvite() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (communityId: string) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.acceptCommunityInvite(communityId);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["communities"] });
+      queryClient.invalidateQueries({ queryKey: ["communityInvites"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({
+        queryKey: ["unreadNotificationCount"],
+      });
+    },
+  });
+}
+
+export function useDeclineCommunityInvite() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (communityId: string) => {
+      if (!actor) throw new Error("Actor not ready");
+      await actor.declineCommunityInvite(communityId);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["communityInvites"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function useInviteToCommunity(communityId: string) {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (target: Principal) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.inviteToCommunity(communityId, target);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["community", communityId] });
+      queryClient.invalidateQueries({
+        queryKey: ["communityMessages", communityId],
+      });
+    },
+  });
+}
+
+/**
+ * A citation created before swarms were captured has no recorded swarm, so the
+ * gate cannot resolve a community. The author supplies it once from the node
+ * list the composer already reads; it is frozen after that.
+ */
+export function useSetPostSwarm() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      postId: bigint;
+      swarmNodeId: string;
+      swarmCreator: Principal | null;
+      communityName: string | null;
+    }) => {
+      if (!actor) throw new Error("Actor not ready");
+      return actor.setPostSwarm(
+        input.postId,
+        input.swarmNodeId,
+        input.swarmCreator,
+        input.communityName,
+      );
+    },
+    onSuccess: (result, input) => {
+      if (result.__kind__ !== "ok") return;
+      queryClient.invalidateQueries({
+        queryKey: ["xyzWriteDraft", input.postId.toString()],
+      });
+    },
+  });
+}

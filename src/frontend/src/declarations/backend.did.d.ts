@@ -31,6 +31,32 @@ export interface ChainView {
   'start' : [] | [GraphRefInput],
   'levels' : Array<ChainLevelView>,
 }
+export interface CommunityMemberView {
+  'principal' : Principal,
+  'isCreator' : boolean,
+  'username' : string,
+  'displayName' : string,
+}
+export interface CommunityMessageView {
+  'id' : bigint,
+  'authorUsername' : string,
+  'communityId' : string,
+  'createdAt' : Time,
+  'text' : string,
+  'author' : Principal,
+  'authorDisplayName' : string,
+}
+export interface CommunityView {
+  'id' : string,
+  'creator' : Principal,
+  'isCreator' : boolean,
+  'lastMessageAt' : [] | [Time],
+  'name' : string,
+  'memberCount' : bigint,
+  'isMember' : boolean,
+  'graphId' : string,
+  'hasInvite' : boolean,
+}
 export type Error = { 'FrontendOriginsNotConfigured' : null } |
   {
     'MixedSsoSources' : {
@@ -68,6 +94,9 @@ export interface GraphRefInput {
   'nodeId' : string,
   'path' : string,
   'graphId' : string,
+  'swarmCreator' : [] | [Principal],
+  'communityName' : [] | [string],
+  'swarmNodeId' : [] | [string],
   'nodeName' : string,
   'nodeType' : string,
   'graphName' : string,
@@ -88,6 +117,7 @@ export interface Notification {
   'actorPrincipal' : Principal,
 }
 export type NotificationType = { 'repost' : bigint } |
+  { 'communityInvite' : string } |
   { 'like' : bigint } |
   { 'quote' : bigint } |
   { 'mention' : bigint } |
@@ -104,6 +134,11 @@ export interface PaginatedGraphPosts {
   'contributionCount' : bigint,
   'tokenCount' : bigint,
   'posts' : Array<PostResponse>,
+  'nextCursor' : [] | [bigint],
+}
+export interface PaginatedMessages {
+  'hasMore' : boolean,
+  'messages' : Array<CommunityMessageView>,
   'nextCursor' : [] | [bigint],
 }
 export interface PaginatedNotifications {
@@ -178,10 +213,16 @@ export interface UserProfileResponse {
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
+export interface XyzCommitNode {
+  'ref' : string,
+  'nodeId' : string,
+  'path' : Array<string>,
+}
 export interface XyzCommitOk {
   'costText' : string,
   'cost' : bigint,
   'path' : Array<string>,
+  'nodes' : Array<XyzCommitNode>,
   'interpNodeId' : string,
   'revision' : bigint,
   'publishedGraphId' : string,
@@ -190,6 +231,13 @@ export type XyzCommitOutcome = { 'ok' : XyzCommitOk } |
   { 'err' : { 'kind' : XyzErrKind, 'message' : string } } |
   { 'conflict' : { 'message' : string } } |
   { 'busy' : { 'message' : string } } |
+  {
+    'gate' : {
+      'communityName' : [] | [string],
+      'message' : string,
+      'reason' : string,
+    }
+  } |
   {
     'blocked' : {
       'plan' : XyzPlan,
@@ -234,6 +282,13 @@ export type XyzPreviewResult = {
     'err' : { 'kind' : XyzErrKind, 'message' : string }
   } |
   {
+    'gate' : {
+      'communityName' : [] | [string],
+      'message' : string,
+      'reason' : string,
+    }
+  } |
+  {
     'blocked' : {
       'plan' : XyzPlan,
       'pathCreators' : Array<XyzPathCreator>,
@@ -257,8 +312,10 @@ export interface XyzWriteDraft {
   'costText' : string,
   'canPublish' : boolean,
   'costTenths' : bigint,
+  'gateCode' : [] | [string],
   'writeId' : string,
   'tokenNodeId' : [] | [string],
+  'gateReason' : [] | [string],
   'nodeType' : string,
   'reason' : [] | [string],
   'postId' : bigint,
@@ -296,6 +353,11 @@ export interface _SERVICE {
   '_initialize_access_control' : ActorMethod<[], undefined>,
   '_internet_identity_sign_in_finish' : ActorMethod<[], Result>,
   '_internet_identity_sign_in_start' : ActorMethod<[], Uint8Array>,
+  'acceptCommunityInvite' : ActorMethod<
+    [string],
+    { 'ok' : CommunityView } |
+      { 'err' : string }
+  >,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'blockUser' : ActorMethod<[Principal], undefined>,
   'checkUsernameAvailability' : ActorMethod<[string], boolean>,
@@ -317,12 +379,26 @@ export interface _SERVICE {
     [bigint, string, [] | [ExternalBlob], [] | [string]],
     PostResponse
   >,
+  'declineCommunityInvite' : ActorMethod<[string], undefined>,
   'deletePost' : ActorMethod<[bigint], undefined>,
   'dislikePost' : ActorMethod<[bigint], undefined>,
   'editPost' : ActorMethod<[bigint, string], PostResponse>,
   'followUser' : ActorMethod<[Principal], undefined>,
   'getAppBackend' : ActorMethod<[], string>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  'getCommunity' : ActorMethod<[string], [] | [CommunityView]>,
+  'getCommunityMembers' : ActorMethod<
+    [string, bigint, bigint],
+    {
+      'nextOffset' : [] | [bigint],
+      'hasMore' : boolean,
+      'members' : Array<CommunityMemberView>,
+    }
+  >,
+  'getCommunityMessages' : ActorMethod<
+    [string, [] | [bigint], bigint],
+    PaginatedMessages
+  >,
   'getFollowers' : ActorMethod<[string, bigint, bigint], PaginatedFollows>,
   'getFollowing' : ActorMethod<[string, bigint, bigint], PaginatedFollows>,
   'getGlobalFeed' : ActorMethod<[[] | [bigint], bigint], PaginatedPosts>,
@@ -332,6 +408,8 @@ export interface _SERVICE {
     [] | [{ 'text' : string, 'units' : bigint }]
   >,
   'getMyAppLink' : ActorMethod<[], [] | [LinkState]>,
+  'getMyCommunities' : ActorMethod<[], Array<CommunityView>>,
+  'getMyCommunityInvites' : ActorMethod<[], Array<CommunityView>>,
   'getNotifications' : ActorMethod<
     [[] | [bigint], bigint],
     PaginatedNotifications
@@ -361,6 +439,11 @@ export interface _SERVICE {
   'getUnreadNotificationCount' : ActorMethod<[], bigint>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfileResponse]>,
   'getXyzWriteDraft' : ActorMethod<[bigint], [] | [XyzWriteDraft]>,
+  'inviteToCommunity' : ActorMethod<
+    [string, Principal],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'likePost' : ActorMethod<[bigint], undefined>,
   'markAllNotificationsRead' : ActorMethod<[], undefined>,
@@ -385,6 +468,16 @@ export interface _SERVICE {
   >,
   'searchPosts' : ActorMethod<[string, [] | [bigint], bigint], PaginatedPosts>,
   'searchUsers' : ActorMethod<[string, bigint], Array<UserProfileResponse>>,
+  'sendCommunityMessage' : ActorMethod<
+    [string, string],
+    { 'ok' : CommunityMessageView } |
+      { 'err' : string }
+  >,
+  'setPostSwarm' : ActorMethod<
+    [bigint, string, [] | [Principal], [] | [string]],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'setProfile' : ActorMethod<[string, string, string], undefined>,
   'unblockUser' : ActorMethod<[Principal], undefined>,
   'undislikePost' : ActorMethod<[bigint], undefined>,

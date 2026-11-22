@@ -19,6 +19,7 @@ import {
   Settings,
   Sun,
   User,
+  Users,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useProfile, useUnreadNotificationCount } from "../hooks/useQueries";
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { label: "Home", icon: Home, to: "/" },
   { label: "Search", icon: Search, to: "/search" },
   { label: "Notifications", icon: Bell, to: "/notifications" },
+  { label: "Communities", icon: Users, to: "/communities" },
   { label: "Settings", icon: Settings, to: "/settings" },
 ] as const;
 
@@ -36,6 +38,11 @@ function isNavActive(itemTo: string, currentPath: string): boolean {
   if (itemTo === "/search")
     return (
       currentPath.startsWith("/search") || currentPath.startsWith("/hashtag/")
+    );
+  if (itemTo === "/communities")
+    return (
+      currentPath.startsWith("/communities") ||
+      currentPath.startsWith("/community/")
     );
   return currentPath.startsWith(itemTo);
 }

@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { Principal } from "@icp-sdk/core/principal";
 import { Loader2, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ChainInput } from "../backend";
@@ -57,6 +58,11 @@ function trimToRef(node: ResolvedNode) {
     nodeName: node.name,
     nodeType: node.type,
     path: node.path,
+    swarmNodeId: node.swarmNodeId ?? undefined,
+    swarmCreator: node.swarmCreator
+      ? Principal.fromText(node.swarmCreator)
+      : undefined,
+    communityName: node.swarmLabel ?? undefined,
   };
 }
 

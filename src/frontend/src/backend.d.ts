@@ -33,6 +33,32 @@ export interface ChainView {
     start?: GraphRefInput;
     levels: Array<ChainLevelView>;
 }
+export interface CommunityMemberView {
+    principal: Principal;
+    isCreator: boolean;
+    username: string;
+    displayName: string;
+}
+export interface CommunityMessageView {
+    id: bigint;
+    authorUsername: string;
+    communityId: string;
+    createdAt: Time;
+    text: string;
+    author: Principal;
+    authorDisplayName: string;
+}
+export interface CommunityView {
+    id: string;
+    creator: Principal;
+    isCreator: boolean;
+    lastMessageAt?: Time;
+    name: string;
+    memberCount: bigint;
+    isMember: boolean;
+    graphId: string;
+    hasInvite: boolean;
+}
 export type Error_ = {
     __kind__: "FrontendOriginsNotConfigured";
     FrontendOriginsNotConfigured: null;
@@ -98,6 +124,9 @@ export interface GraphRefInput {
     nodeId: string;
     path: string;
     graphId: string;
+    swarmCreator?: Principal;
+    communityName?: string;
+    swarmNodeId?: string;
     nodeName: string;
     nodeType: string;
     graphName: string;
@@ -126,6 +155,9 @@ export type NotificationType = {
     __kind__: "repost";
     repost: bigint;
 } | {
+    __kind__: "communityInvite";
+    communityInvite: string;
+} | {
     __kind__: "like";
     like: bigint;
 } | {
@@ -152,6 +184,11 @@ export interface PaginatedGraphPosts {
     contributionCount: bigint;
     tokenCount: bigint;
     posts: Array<PostResponse>;
+    nextCursor?: bigint;
+}
+export interface PaginatedMessages {
+    hasMore: boolean;
+    messages: Array<CommunityMessageView>;
     nextCursor?: bigint;
 }
 export interface PaginatedNotifications {
@@ -240,10 +277,16 @@ export interface UserProfileResponse {
     profilePictureHash?: ExternalBlob;
     postsCount: bigint;
 }
+export interface XyzCommitNode {
+    ref: string;
+    nodeId: string;
+    path: Array<string>;
+}
 export interface XyzCommitOk {
     costText: string;
     cost: bigint;
     path: Array<string>;
+    nodes: Array<XyzCommitNode>;
     interpNodeId: string;
     revision: bigint;
     publishedGraphId: string;
@@ -266,6 +309,13 @@ export type XyzCommitOutcome = {
     __kind__: "busy";
     busy: {
         message: string;
+    };
+} | {
+    __kind__: "gate";
+    gate: {
+        communityName?: string;
+        message: string;
+        reason: string;
     };
 } | {
     __kind__: "blocked";
@@ -337,6 +387,13 @@ export type XyzPreviewResult = {
         message: string;
     };
 } | {
+    __kind__: "gate";
+    gate: {
+        communityName?: string;
+        message: string;
+        reason: string;
+    };
+} | {
     __kind__: "blocked";
     blocked: {
         plan: XyzPlan;
@@ -378,8 +435,10 @@ export interface XyzWriteDraft {
     costText: string;
     canPublish: boolean;
     costTenths: bigint;
+    gateCode?: string;
     writeId: string;
     tokenNodeId?: string;
+    gateReason?: string;
     nodeType: string;
     reason?: string;
     postId: bigint;
@@ -394,6 +453,13 @@ export enum XyzErrKind {
     internal = "internal"
 }
 export interface backendInterface {
+    acceptCommunityInvite(communityId: string): Promise<{
+        __kind__: "ok";
+        ok: CommunityView;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     blockUser(user: Principal): Promise<void>;
     checkUsernameAvailability(username: string): Promise<boolean>;
@@ -403,12 +469,20 @@ export interface backendInterface {
     createGraphPost(ref: GraphRefInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createPost(text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createReply(parentPostId: bigint, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
+    declineCommunityInvite(communityId: string): Promise<void>;
     deletePost(postId: bigint): Promise<void>;
     dislikePost(postId: bigint): Promise<void>;
     editPost(postId: bigint, text: string): Promise<PostResponse>;
     followUser(user: Principal): Promise<void>;
     getAppBackend(): Promise<string>;
     getCallerUserRole(): Promise<UserRole>;
+    getCommunity(communityId: string): Promise<CommunityView | null>;
+    getCommunityMembers(communityId: string, offset: bigint, limit: bigint): Promise<{
+        nextOffset?: bigint;
+        hasMore: boolean;
+        members: Array<CommunityMemberView>;
+    }>;
+    getCommunityMessages(communityId: string, cursor: bigint | null, limit: bigint): Promise<PaginatedMessages>;
     getFollowers(username: string, offset: bigint, limit: bigint): Promise<PaginatedFollows>;
     getFollowing(username: string, offset: bigint, limit: bigint): Promise<PaginatedFollows>;
     getGlobalFeed(cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
@@ -418,6 +492,8 @@ export interface backendInterface {
         units: bigint;
     } | null>;
     getMyAppLink(): Promise<LinkState | null>;
+    getMyCommunities(): Promise<Array<CommunityView>>;
+    getMyCommunityInvites(): Promise<Array<CommunityView>>;
     getNotifications(cursor: bigint | null, limit: bigint): Promise<PaginatedNotifications>;
     getPost(postId: bigint): Promise<PostResponse | null>;
     getPostsByGraphNode(graphId: string, nodeId: string, cursor: bigint | null, limit: bigint): Promise<PaginatedGraphPosts>;
@@ -432,6 +508,13 @@ export interface backendInterface {
     getUnreadNotificationCount(): Promise<bigint>;
     getUserProfile(user: Principal): Promise<UserProfileResponse | null>;
     getXyzWriteDraft(postId: bigint): Promise<XyzWriteDraft | null>;
+    inviteToCommunity(communityId: string, target: Principal): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     isCallerAdmin(): Promise<boolean>;
     likePost(postId: bigint): Promise<void>;
     markAllNotificationsRead(): Promise<void>;
@@ -457,6 +540,20 @@ export interface backendInterface {
     }>;
     searchPosts(searchText: string, cursor: bigint | null, limit: bigint): Promise<PaginatedPosts>;
     searchUsers(searchText: string, limit: bigint): Promise<Array<UserProfileResponse>>;
+    sendCommunityMessage(communityId: string, text: string): Promise<{
+        __kind__: "ok";
+        ok: CommunityMessageView;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    setPostSwarm(postId: bigint, swarmNodeId: string, swarmCreator: Principal | null, communityName: string | null): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     setProfile(username: string, displayName: string, bio: string): Promise<void>;
     unblockUser(user: Principal): Promise<void>;
     undislikePost(postId: bigint): Promise<void>;

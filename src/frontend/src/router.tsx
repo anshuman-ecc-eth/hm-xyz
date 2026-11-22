@@ -7,6 +7,8 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { AppLayout } from "./components/AppLayout";
+import { CommunitiesPage } from "./components/CommunitiesPage";
+import { CommunityPage } from "./components/CommunityPage";
 import { Feed } from "./components/Feed";
 import { FollowList } from "./components/FollowList";
 import { NodePage } from "./components/NodePage";
@@ -64,6 +66,18 @@ const notificationsRoute = createRoute({
   component: NotificationsPage,
 });
 
+const communitiesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "communities",
+  component: CommunitiesPage,
+});
+
+const communityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "community/$id",
+  component: CommunityPage,
+});
+
 const nodeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "node/$graphId",
@@ -112,6 +126,8 @@ const routeTree = rootRoute.addChildren([
   postRoute,
   searchRoute,
   notificationsRoute,
+  communitiesRoute,
+  communityRoute,
   nodeRoute,
   settingsRoute,
   hashtagRoute,

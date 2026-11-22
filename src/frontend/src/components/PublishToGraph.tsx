@@ -7,14 +7,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Principal } from "@icp-sdk/core/principal";
 import { Check, Copy, ExternalLink, Loader2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { XyzPathCreator, XyzPlan } from "../backend";
+import { useHyvmindNodes } from "../hooks/useHyvmind";
 import {
   useCommitXyzWrite,
   usePreviewXyzWrite,
   useReconcileXyzWrite,
+  useSetPostSwarm,
   useXyzWriteDraft,
 } from "../hooks/useQueries";
 import { useAppStore } from "../stores/useAppStore";
@@ -100,8 +103,8 @@ function BlockedBy({ blocked }: { blocked: Blocked }) {
               </span>
               <span className="text-muted-foreground">
                 {creator.linked
-                  ? " — you and they don't follow each other yet."
-                  : " — hasn't linked a hyvmind.xyz account."}
+                  ? " — a creator on this path."
+                  : " — a creator on this path, not yet linked to xyz."}
               </span>
             </li>
           ))}
@@ -132,6 +135,8 @@ export function PublishToGraph({ post }: { post: Post }) {
   const preview = usePreviewXyzWrite();
   const commit = useCommitXyzWrite();
   const reconcile = useReconcileXyzWrite();
+  const setSwarm = useSetPostSwarm();
+  const swarmRepairTried = useRef(false);
 
   const pendingPublishPostId = useAppStore((s) => s.pendingPublishPostId);
   const setPendingPublishPostId = useAppStore((s) => s.setPendingPublishPostId);
@@ -144,6 +149,32 @@ export function PublishToGraph({ post }: { post: Post }) {
   const [retryAt, setRetryAt] = useState<number | null>(null);
   const [pendingDigest, setPendingDigest] = useState<string | null>(null);
   const autoPreviewed = useRef(false);
+
+  // Posts created before swarms were captured cannot pass the gate until their
+  // enclosing swarm is recorded. The node list already carries it, so repair it
+  // once, automatically, then let the draft refetch.
+  const swarmNodes = useHyvmindNodes(
+    open && graphRef ? graphRef.graphId : null,
+  );
+  const needsSwarmRepair =
+    open && !publishedId && draft.data?.gateCode === "noSwarm";
+
+  useEffect(() => {
+    if (!needsSwarmRepair || !graphRef) return;
+    if (swarmRepairTried.current) return;
+    const node = (swarmNodes.data ?? []).find((n) => n.id === graphRef.nodeId);
+    if (!node) return;
+    swarmRepairTried.current = true;
+    if (!node.swarmNodeId) return;
+    setSwarm.mutate({
+      postId: post.id,
+      swarmNodeId: node.swarmNodeId,
+      swarmCreator: node.swarmCreator
+        ? Principal.fromText(node.swarmCreator)
+        : null,
+      communityName: node.swarmLabel,
+    });
+  }, [needsSwarmRepair, graphRef, swarmNodes.data, post.id, setSwarm.mutate]);
 
   useEffect(() => {
     if (retryAt == null) return;
@@ -187,6 +218,9 @@ export function PublishToGraph({ post }: { post: Post }) {
             break;
           case "notLinked":
             setNotice(res.notLinked.message);
+            break;
+          case "gate":
+            setNotice(res.gate.message);
             break;
           case "err":
             setNotice(res.err.message);
@@ -282,6 +316,9 @@ export function PublishToGraph({ post }: { post: Post }) {
               break;
             case "notLinked":
               setNotice(res.notLinked.message);
+              break;
+            case "gate":
+              setNotice(res.gate.message);
               break;
             case "err":
               setNotice(res.err.message);
@@ -422,7 +459,7 @@ export function PublishToGraph({ post }: { post: Post }) {
 
             {draftBlocked && (
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                {draft.data?.reason}
+                {draft.data?.reason ?? draft.data?.gateReason}
               </p>
             )}
 
