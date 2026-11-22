@@ -35,18 +35,6 @@ module {
     editedAt : ?Time.Time;
   };
 
-  // Deployed shape (six cases) and the shape this build introduces. Adding a
-  // variant constructor is stable-safe, but the migration must still widen the
-  // stored values explicitly, so both types are inlined here.
-  type OldNotificationType = {
-    #like : Nat;
-    #reply : Nat;
-    #mention : Nat;
-    #follow;
-    #repost : Nat;
-    #quote : Nat;
-  };
-
   type NotificationType = {
     #like : Nat;
     #reply : Nat;
@@ -54,16 +42,6 @@ module {
     #follow;
     #repost : Nat;
     #quote : Nat;
-    #communityInvite : Text;
-  };
-
-  type OldNotification = {
-    id : Nat;
-    notificationType : OldNotificationType;
-    actorPrincipal : Principal;
-    actorUsername : Text;
-    createdAt : Time.Time;
-    isRead : Bool;
   };
 
   type Notification = {
@@ -100,40 +78,6 @@ module {
     nodeName : Text;
     nodeType : Text;
     path : Text;
-    swarmNodeId : ?Text;
-    swarmCreator : ?Principal;
-    communityName : ?Text;
-  };
-
-  type SwarmCapture = {
-    swarmNodeId : Text;
-    swarmCreator : ?Principal;
-    communityName : ?Text;
-  };
-
-  type Community = {
-    id : Text;
-    graphId : Text;
-    name : Text;
-    creator : Principal;
-    createdAt : Time.Time;
-    memberCount : Nat;
-    lastMessageAt : ?Time.Time;
-  };
-
-  type CommunityMember = { joinedAt : Time.Time };
-
-  type CommunityInvite = {
-    invitedBy : Principal;
-    createdAt : Time.Time;
-  };
-
-  type CommunityMessage = {
-    id : Nat;
-    communityId : Text;
-    author : Principal;
-    text : Text;
-    createdAt : Time.Time;
   };
 
   type XyzSourceRef = { name : Text; url : Text };
@@ -167,7 +111,7 @@ module {
     postReposts : Map.Map<Nat, Map.Map<Principal, Bool>>;
     repostIndex : Map.Map<Principal, Map.Map<Nat, Nat>>;
     hashtagIndex : Map.Map<Text, Map.Map<Nat, Bool>>;
-    userNotifications : Map.Map<Principal, Map.Map<Nat, OldNotification>>;
+    userNotifications : Map.Map<Principal, Map.Map<Nat, Notification>>;
     var nextNotificationId : Nat;
     postGraphRefs : Map.Map<Nat, GraphRef>;
     graphNodePosts : Map.Map<Text, Map.Map<Text, Map.Map<Nat, Bool>>>;
@@ -201,14 +145,6 @@ module {
     appToXyz : Map.Map<Principal, Principal>;
     postChains : Map.Map<Nat, ChainSpec>;
     userTextBytes : Map.Map<Principal, Nat>;
-    communities : Map.Map<Text, Community>;
-    communityMembers : Map.Map<Text, Map.Map<Principal, CommunityMember>>;
-    memberCommunities : Map.Map<Principal, Map.Map<Text, Bool>>;
-    communityInvites : Map.Map<Text, Map.Map<Principal, CommunityInvite>>;
-    inviteIndex : Map.Map<Principal, Map.Map<Text, Bool>>;
-    communityMessages : Map.Map<Text, Map.Map<Nat, CommunityMessage>>;
-    var nextCommunityMessageId : Nat;
-    postSwarm : Map.Map<Nat, SwarmCapture>;
   };
 
   public func migration(old : OldActor) : NewActor {
@@ -228,15 +164,7 @@ module {
       postReposts = old.postReposts;
       repostIndex = old.repostIndex;
       hashtagIndex = old.hashtagIndex;
-      userNotifications = old.userNotifications.map(
-        func(_p : Principal, inner : Map.Map<Nat, OldNotification>) : Map.Map<Nat, Notification> {
-          inner.map(
-            func(_id : Nat, n : OldNotification) : Notification {
-              { n with notificationType = n.notificationType : NotificationType }
-            }
-          )
-        }
-      );
+      userNotifications = old.userNotifications;
       var nextNotificationId = old.nextNotificationId;
       postGraphRefs = old.postGraphRefs;
       graphNodePosts = old.graphNodePosts;
@@ -245,14 +173,6 @@ module {
       appToXyz = old.appToXyz;
       postChains = Map.empty();
       userTextBytes = Map.empty();
-      communities = Map.empty();
-      communityMembers = Map.empty();
-      memberCommunities = Map.empty();
-      communityInvites = Map.empty();
-      inviteIndex = Map.empty();
-      communityMessages = Map.empty();
-      var nextCommunityMessageId = 0;
-      postSwarm = Map.empty();
     };
   };
 };
