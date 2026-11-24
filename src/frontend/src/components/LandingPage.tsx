@@ -212,10 +212,16 @@ export function LandingPage() {
     if (!isLoggingIn || isLoginError) setPendingProvider(null);
   }, [isLoggingIn, isLoginError]);
 
-  // A hand-drawn underline under "own your interpretations", drawn slowly: it
-  // draws in over 1.75s, holds for 1s, then fades out. rough-notation injects
-  // an absolutely positioned SVG after the span, so the paragraph is its
-  // containing block. `multiline` draws one underline per line if it wraps.
+  // A hand-drawn yellow highlight over "own your interpretations", drawn
+  // slowly: it draws in over 1.75s, holds for 1s, then fades out. rough-notation
+  // injects an absolutely positioned SVG next to the span, so the paragraph is
+  // its containing block. `multiline` highlights each line if it wraps.
+  //
+  // The draw waits for the page's webfont. On a cold cache Geist Mono swaps in
+  // after mount, moving the phrase; rough-notation's 400ms resize check then
+  // redraws the highlight with `animate: false`, so it snaps to completion
+  // mid-draw. Measuring only after the face is loaded is the fix the library
+  // documents (pshihn/rough-notation#18).
   const annotatedRef = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
     const el = annotatedRef.current;
@@ -228,41 +234,88 @@ export function LandingPage() {
     const holdMs = 1000;
     const fadeMs = 400;
 
-    const annotation = annotate(el, {
-      type: "underline",
-      multiline: true,
-      color: "#ff3b30",
-      strokeWidth: 2,
-      padding: 4,
-      iterations: 2,
-      animate: !reduced,
-      animationDuration: duration,
-    });
-    annotation.show();
-
-    // `hide()` pops the paths out in one frame, so arm an opacity transition
-    // up front and fade the injected SVG before removing it.
-    const svg = el.nextElementSibling;
-    const canFade = !reduced && svg instanceof SVGSVGElement;
-    if (canFade) svg.style.transition = `opacity ${fadeMs}ms ease-out`;
-
+    let cancelled = false;
+    let annotation: ReturnType<typeof annotate> | undefined;
+    let timer: number | undefined;
     let fadeTimer: number | undefined;
-    const timer = window.setTimeout(
-      () => {
-        if (!canFade) {
-          annotation.hide();
-          return;
-        }
-        svg.style.opacity = "0";
-        fadeTimer = window.setTimeout(() => annotation.hide(), fadeMs);
-      },
-      (reduced ? 0 : duration) + holdMs,
-    );
+
+    const draw = () => {
+      if (cancelled) return;
+
+      annotation = annotate(el, {
+        type: "highlight",
+        multiline: true,
+        // Translucent marker yellow: legible over dark text in light mode and
+        // still behind white text in dark mode.
+        color: "rgba(250, 204, 21, 0.38)",
+        iterations: 2,
+        animate: !reduced,
+        animationDuration: duration,
+      });
+      annotation.show();
+
+      // `hide()` pops the paths out in one frame, so arm an opacity transition
+      // up front and fade the injected SVG before removing it. `highlight`
+      // injects before the span (so the ink sits behind the text); the other
+      // types inject after it, so check both sides.
+      const svg =
+        el.previousElementSibling instanceof SVGSVGElement
+          ? el.previousElementSibling
+          : el.nextElementSibling instanceof SVGSVGElement
+            ? el.nextElementSibling
+            : null;
+      const canFade = !reduced && svg instanceof SVGSVGElement;
+      if (canFade) svg.style.transition = `opacity ${fadeMs}ms ease-out`;
+
+      timer = window.setTimeout(
+        () => {
+          if (!canFade) {
+            annotation?.hide();
+            return;
+          }
+          svg.style.opacity = "0";
+          fadeTimer = window.setTimeout(() => annotation?.hide(), fadeMs);
+        },
+        (reduced ? 0 : duration) + holdMs,
+      );
+    };
+
+    const start = () => {
+      // Two frames: one for the font-driven layout to settle after `ready`.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => draw());
+      });
+    };
+
+    if (!document.fonts) {
+      start();
+    } else {
+      // Pass the copy so the latin subset is definitely requested. Wait for
+      // both weights the hero uses; the h1 is mono at weight 500.
+      Promise.all([
+        document.fonts.load(
+          '400 16px "Geist Mono"',
+          "own your interpretations",
+        ),
+        document.fonts.load(
+          '500 16px "Geist Mono"',
+          "A Social Graph for Legal Researchers.",
+        ),
+      ])
+        .then(() => document.fonts.ready)
+        .catch(() => {
+          // A face that never loads never swaps, so fallback metrics are final.
+        })
+        .then(() => {
+          if (!cancelled) start();
+        });
+    }
 
     return () => {
-      window.clearTimeout(timer);
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
       if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
-      annotation.remove();
+      annotation?.remove();
     };
   }, []);
 
