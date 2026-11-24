@@ -212,10 +212,10 @@ export function LandingPage() {
     if (!isLoggingIn || isLoginError) setPendingProvider(null);
   }, [isLoggingIn, isLoginError]);
 
-  // A hand-drawn box around "own your interpretations", drawn slowly: it
+  // A hand-drawn underline under "own your interpretations", drawn slowly: it
   // draws in over 1.75s, holds for 1s, then fades out. rough-notation injects
   // an absolutely positioned SVG after the span, so the paragraph is its
-  // containing block. `multiline` draws one box per line if the phrase wraps.
+  // containing block. `multiline` draws one underline per line if it wraps.
   const annotatedRef = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
     const el = annotatedRef.current;
@@ -229,11 +229,11 @@ export function LandingPage() {
     const fadeMs = 400;
 
     const annotation = annotate(el, {
-      type: "box",
+      type: "underline",
       multiline: true,
       color: "#ff3b30",
       strokeWidth: 2,
-      padding: 3,
+      padding: 4,
       iterations: 2,
       animate: !reduced,
       animationDuration: duration,
