@@ -302,6 +302,7 @@ export const UserProfileResponse = IDL.Record({
   'followingCount' : IDL.Nat,
   'isFollowedByCurrentUser' : IDL.Bool,
   'profilePictureHash' : IDL.Opt(ExternalBlob),
+  'pinnedPostId' : IDL.Opt(IDL.Nat),
   'postsCount' : IDL.Nat,
 });
 export const TrendingHashtag = IDL.Record({
@@ -544,6 +545,7 @@ export const idlService = IDL.Service({
   'markAllNotificationsRead' : IDL.Func([], [], []),
   'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
   'muteUser' : IDL.Func([IDL.Principal], [], []),
+  'pinPost' : IDL.Func([IDL.Nat], [], []),
   'previewXyzWriteForPost' : IDL.Func([IDL.Nat], [XyzPreviewResult], []),
   'quotePost' : IDL.Func(
       [IDL.Nat, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
@@ -594,6 +596,7 @@ export const idlService = IDL.Service({
       [],
     ),
   'unmuteUser' : IDL.Func([IDL.Principal], [], []),
+  'unpinPost' : IDL.Func([IDL.Nat], [], []),
   'updateHeaderImage' : IDL.Func([IDL.Opt(ExternalBlob)], [], []),
   'updateProfilePicture' : IDL.Func([IDL.Opt(ExternalBlob)], [], []),
 });
@@ -895,6 +898,7 @@ export const idlFactory = ({ IDL }) => {
     'followingCount' : IDL.Nat,
     'isFollowedByCurrentUser' : IDL.Bool,
     'profilePictureHash' : IDL.Opt(ExternalBlob),
+    'pinnedPostId' : IDL.Opt(IDL.Nat),
     'postsCount' : IDL.Nat,
   });
   const TrendingHashtag = IDL.Record({ 'tag' : IDL.Text, 'count' : IDL.Nat });
@@ -1138,6 +1142,7 @@ export const idlFactory = ({ IDL }) => {
     'markAllNotificationsRead' : IDL.Func([], [], []),
     'markNotificationRead' : IDL.Func([IDL.Nat], [], []),
     'muteUser' : IDL.Func([IDL.Principal], [], []),
+    'pinPost' : IDL.Func([IDL.Nat], [], []),
     'previewXyzWriteForPost' : IDL.Func([IDL.Nat], [XyzPreviewResult], []),
     'quotePost' : IDL.Func(
         [IDL.Nat, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
@@ -1188,6 +1193,7 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'unmuteUser' : IDL.Func([IDL.Principal], [], []),
+    'unpinPost' : IDL.Func([IDL.Nat], [], []),
     'updateHeaderImage' : IDL.Func([IDL.Opt(ExternalBlob)], [], []),
     'updateProfilePicture' : IDL.Func([IDL.Opt(ExternalBlob)], [], []),
   });

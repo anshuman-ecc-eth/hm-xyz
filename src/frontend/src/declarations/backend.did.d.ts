@@ -216,6 +216,7 @@ export interface UserProfileResponse {
   'followingCount' : bigint,
   'isFollowedByCurrentUser' : boolean,
   'profilePictureHash' : [] | [ExternalBlob],
+  'pinnedPostId' : [] | [bigint],
   'postsCount' : bigint,
 }
 export type UserRole = { 'admin' : null } |
@@ -469,6 +470,7 @@ export interface _SERVICE {
   'markAllNotificationsRead' : ActorMethod<[], undefined>,
   'markNotificationRead' : ActorMethod<[bigint], undefined>,
   'muteUser' : ActorMethod<[Principal], undefined>,
+  'pinPost' : ActorMethod<[bigint], undefined>,
   'previewXyzWriteForPost' : ActorMethod<[bigint], XyzPreviewResult>,
   'quotePost' : ActorMethod<
     [bigint, string, [] | [ExternalBlob], [] | [string]],
@@ -506,6 +508,7 @@ export interface _SERVICE {
   'unlikePost' : ActorMethod<[bigint], undefined>,
   'unlinkAppAccount' : ActorMethod<[], { 'ok' : null } | { 'err' : string }>,
   'unmuteUser' : ActorMethod<[Principal], undefined>,
+  'unpinPost' : ActorMethod<[bigint], undefined>,
   'updateHeaderImage' : ActorMethod<[[] | [ExternalBlob]], undefined>,
   'updateProfilePicture' : ActorMethod<[[] | [ExternalBlob]], undefined>,
 }

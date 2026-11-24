@@ -167,10 +167,13 @@ export function useDeletePost() {
       if (!actor) throw new Error("Actor not ready");
       await actor.deletePost(postId);
     },
-    onSuccess: () => {
+    onSuccess: (_data, postId) => {
       queryClient.invalidateQueries({ queryKey: ["globalFeed"] });
       queryClient.invalidateQueries({ queryKey: ["homeFeed"] });
       queryClient.invalidateQueries({ queryKey: ["userPosts"] });
+      queryClient.invalidateQueries({ queryKey: ["postsByUsername"] });
+      queryClient.invalidateQueries({ queryKey: ["profileByUsername"] });
+      queryClient.removeQueries({ queryKey: ["post", postId.toString()] });
     },
   });
 }
@@ -306,6 +309,36 @@ export function usePostsByUsername(username: string) {
     initialPageParam: null as bigint | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: !!actor && !isFetching && username.length > 0,
+  });
+}
+
+export function usePinPost() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (postId: bigint) => {
+      if (!actor) throw new Error("Actor not ready");
+      await actor.pinPost(postId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profileByUsername"] });
+    },
+  });
+}
+
+export function useUnpinPost() {
+  const { actor } = useActor(createActor);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (postId: bigint) => {
+      if (!actor) throw new Error("Actor not ready");
+      await actor.unpinPost(postId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profileByUsername"] });
+    },
   });
 }
 

@@ -426,6 +426,7 @@ actor {
     followersCount : Nat;
     followingCount : Nat;
     postsCount : Nat;
+    pinnedPostId : ?Nat;
     isFollowedByCurrentUser : Bool;
     isBlockedByCurrentUser : Bool;
     isMutedByCurrentUser : Bool;
@@ -474,6 +475,7 @@ actor {
   let usernameToUser : Map.Map<Text, Principal>;
   let posts : Map.Map<Nat, Post>;
   let userPostCounts : Map.Map<Principal, Nat>;
+  let pinnedPosts : Map.Map<Principal, Nat>;
   var nextPostId : Nat;
   let following : Map.Map<Principal, Map.Map<Principal, Bool>>;
   let followers : Map.Map<Principal, Map.Map<Principal, Bool>>;
@@ -2132,6 +2134,21 @@ actor {
           case (null) { 0 };
         };
         let isAuthenticated = not caller.isAnonymous();
+        let pinnedPostId = switch (pinnedPosts.get(user)) {
+          case (?id) {
+            switch (posts.get(id)) {
+              case (?post) {
+                let pinnable = switch (post.postType) {
+                  case (#repost(_)) { false };
+                  case (_) { true };
+                };
+                if (post.author == user and pinnable) { ?id } else { null };
+              };
+              case (null) { null };
+            };
+          };
+          case (null) { null };
+        };
         let isFollowed = if (isAuthenticated) {
           switch (following.get(caller)) {
             case (?m) { m.get(user) != null };
@@ -2159,6 +2176,7 @@ actor {
           followersCount;
           followingCount;
           postsCount;
+          pinnedPostId;
           isFollowedByCurrentUser = isFollowed;
           isBlockedByCurrentUser = isBlocked;
           isMutedByCurrentUser = isMuted;
@@ -2426,6 +2444,32 @@ actor {
   public query ({ caller }) func getProfile() : async ?UserProfile {
     requireAuth(caller);
     userProfiles.get(caller);
+  };
+
+  public shared ({ caller }) func pinPost(postId : Nat) : async () {
+    requireAuth(caller);
+    let post = switch (posts.get(postId)) {
+      case (?p) { p };
+      case (null) { Runtime.trap("Post not found") };
+    };
+    if (post.author != caller) {
+      Runtime.trap("Cannot pin another user's post");
+    };
+    switch (post.postType) {
+      case (#repost(_)) { Runtime.trap("Reposts cannot be pinned") };
+      case (_) {};
+    };
+    pinnedPosts.add(caller, postId);
+  };
+
+  public shared ({ caller }) func unpinPost(postId : Nat) : async () {
+    requireAuth(caller);
+    switch (pinnedPosts.get(caller)) {
+      case (?pinnedId) {
+        if (pinnedId == postId) { pinnedPosts.remove(caller) };
+      };
+      case (null) {};
+    };
   };
 
   public shared ({ caller }) func setProfile(username : Text, displayName : Text, bio : Text) : async () {
@@ -2834,6 +2878,12 @@ actor {
     removePostHashtags(postId, post.text);
     postLikes.remove(postId);
     postDislikes.remove(postId);
+    switch (pinnedPosts.get(caller)) {
+      case (?pinnedId) {
+        if (pinnedId == postId) { pinnedPosts.remove(caller) };
+      };
+      case (null) {};
+    };
 
     // Clean up type-specific indexes
     switch (post.postType) {

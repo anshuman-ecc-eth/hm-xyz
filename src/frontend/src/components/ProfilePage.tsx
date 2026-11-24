@@ -24,18 +24,24 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useLinkedTrust } from "../hooks/useHyvmind";
 import { useInfiniteScroll } from "../hooks/useInfiniteScroll";
 import { useMediaUpload } from "../hooks/useMediaUpload";
 import {
   useBlockUser,
   useFollowUser,
+  useLinkedBuzzBalance,
   useMuteUser,
+  useMyAppLink,
+  usePinPost,
+  usePost,
   usePostsByUsername,
   useProfile,
   useProfileByUsername,
   useUnblockUser,
   useUnfollowUser,
   useUnmuteUser,
+  useUnpinPost,
   useUpdateHeaderImage,
   useUpdateProfilePicture,
 } from "../hooks/useQueries";
@@ -65,6 +71,16 @@ export function ProfilePage() {
     isError: isProfileError,
   } = useProfileByUsername(username);
 
+  const link = useMyAppLink();
+  const linked = link.data ?? null;
+  const appPrincipal = linked?.appPrincipal.toText() ?? null;
+  const { data: buzz } = useLinkedBuzzBalance(isOwnProfile && !!linked);
+  const { data: trust } = useLinkedTrust(
+    appPrincipal,
+    isOwnProfile && !!linked,
+  );
+  const trustLabel = trust === undefined ? "— TRUST" : `${trust ?? 0} TRUST`;
+
   const {
     data: postsData,
     isLoading: isLoadingPosts,
@@ -73,6 +89,14 @@ export function ProfilePage() {
     fetchNextPage,
     isFetchingNextPage,
   } = usePostsByUsername(username);
+
+  const pinnedPostId = profile?.pinnedPostId ?? null;
+  const { data: pinnedPostData, isLoading: isPinnedPostLoading } =
+    usePost(pinnedPostId);
+  const pinnedPost = pinnedPostData ?? null;
+
+  const { mutate: pinPost, isPending: isPinPending } = usePinPost();
+  const { mutate: unpinPost, isPending: isUnpinPending } = useUnpinPost();
 
   const profilePrincipal = profile?.principal ?? null;
 
@@ -198,12 +222,30 @@ export function ProfilePage() {
   }, [headerFile, createHeaderBlob, updateHeaderImage, removeHeaderImage]);
 
   const posts = postsData?.pages.flatMap((page) => page.posts) ?? [];
+  const timelinePosts = pinnedPostId
+    ? posts.filter((post) => post.id !== pinnedPostId)
+    : posts;
 
   const sentinelRef = useInfiniteScroll({
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
   });
+
+  const handlePinToggle = (postId: bigint, isPinned: boolean) => {
+    if (isPinned) {
+      unpinPost(postId, {
+        onSuccess: () => toast.success("Unpinned from profile"),
+        onError: (error) =>
+          toast.error(error.message || "Failed to unpin post"),
+      });
+    } else {
+      pinPost(postId, {
+        onSuccess: () => toast.success("Pinned to profile"),
+        onError: (error) => toast.error(error.message || "Failed to pin post"),
+      });
+    }
+  };
 
   const handleFollow = () => {
     if (!profilePrincipal) return;
@@ -535,6 +577,19 @@ export function ProfilePage() {
           <span>Joined {format(joinedDate, "MMM yyyy")}</span>
         </div>
 
+        {isOwnProfile && linked && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs">
+            <span title="Buzz balance in your linked hyvmind.app account">
+              <span className="text-foreground">
+                {buzz ? buzz.text : "— BUZZ"}
+              </span>
+            </span>
+            <span title="Trust earned in your linked hyvmind.app account">
+              <span className="text-foreground">{trustLabel}</span>
+            </span>
+          </div>
+        )}
+
         <div className="mt-2 flex gap-4 text-sm">
           <Link
             to="/$username/following"
@@ -581,34 +636,73 @@ export function ProfilePage() {
             View posts
           </Button>
         </div>
-      ) : isLoadingPosts ? (
-        <FeedSkeleton />
-      ) : isPostsError ? (
-        <p className="p-4 text-center text-destructive">
-          Failed to load posts.
-        </p>
-      ) : posts.length === 0 ? (
-        <div className="flex flex-col items-center px-8 py-16 text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-none bg-primary/10">
-            <PenLine className="h-8 w-8 text-primary" />
-          </div>
-          <p className="text-lg font-semibold">No posts yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {isOwnProfile
-              ? "Share your first post with the world!"
-              : `@${profile.username} hasn't posted anything yet.`}
-          </p>
-        </div>
       ) : (
         <>
-          {posts.map((post) => (
-            <PostCard key={post.id.toString()} post={post} />
-          ))}
-          <div ref={sentinelRef} className="h-1" />
-          {isFetchingNextPage && (
-            <div className="flex justify-center p-4">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          {pinnedPost && (
+            <PostCard
+              key={`pinned-${pinnedPost.id}`}
+              post={pinnedPost}
+              pinned
+              pinState={
+                isOwnProfile
+                  ? {
+                      pinned: true,
+                      pending: isUnpinPending,
+                      onToggle: () => handlePinToggle(pinnedPost.id, true),
+                    }
+                  : undefined
+              }
+            />
+          )}
+          {isPinnedPostLoading && pinnedPostId && !pinnedPost && (
+            <div className="border-b p-4">
+              <Skeleton className="h-24 w-full" />
             </div>
+          )}
+          {isLoadingPosts ? (
+            <FeedSkeleton />
+          ) : isPostsError ? (
+            <p className="p-4 text-center text-destructive">
+              Failed to load posts.
+            </p>
+          ) : timelinePosts.length === 0 &&
+            !pinnedPost &&
+            !isPinnedPostLoading ? (
+            <div className="flex flex-col items-center px-8 py-16 text-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-none bg-primary/10">
+                <PenLine className="h-8 w-8 text-primary" />
+              </div>
+              <p className="text-lg font-semibold">No posts yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {isOwnProfile
+                  ? "Share your first post with the world!"
+                  : `@${profile.username} hasn't posted anything yet.`}
+              </p>
+            </div>
+          ) : (
+            <>
+              {timelinePosts.map((post) => (
+                <PostCard
+                  key={post.id.toString()}
+                  post={post}
+                  pinState={
+                    isOwnProfile
+                      ? {
+                          pinned: false,
+                          pending: isPinPending,
+                          onToggle: () => handlePinToggle(post.id, false),
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+              <div ref={sentinelRef} className="h-1" />
+              {isFetchingNextPage && (
+                <div className="flex justify-center p-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              )}
+            </>
           )}
         </>
       )}

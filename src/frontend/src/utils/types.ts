@@ -78,6 +78,7 @@ export interface UserProfileResponse {
   followersCount: bigint;
   followingCount: bigint;
   postsCount: bigint;
+  pinnedPostId?: bigint;
   isFollowedByCurrentUser: boolean;
   isBlockedByCurrentUser: boolean;
   isMutedByCurrentUser: boolean;

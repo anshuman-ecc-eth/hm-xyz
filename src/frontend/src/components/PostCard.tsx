@@ -17,6 +17,8 @@ import {
   MessageCircle,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   Quote,
   Repeat2,
   ThumbsDown,
@@ -37,8 +39,18 @@ import { PublicationGraph } from "./PublicationGraph";
 import { PublishToGraph } from "./PublishToGraph";
 import { SharePostButton } from "./SharePostButton";
 
+interface PostCardPinState {
+  pinned: boolean;
+  pending?: boolean;
+  onToggle: () => void;
+}
+
 interface PostCardProps {
   post: Post;
+  /** Shows the “Pinned” row above the card. */
+  pinned?: boolean;
+  /** Present only on the owner's profile timeline. */
+  pinState?: PostCardPinState;
 }
 
 function getReferencedPostId(postType: PostType): bigint | null {
@@ -47,7 +59,7 @@ function getReferencedPostId(postType: PostType): bigint | null {
   return null;
 }
 
-export function PostCard({ post }: PostCardProps) {
+export function PostCard({ post, pinned = false, pinState }: PostCardProps) {
   const navigate = useNavigate();
   const { identity } = useInternetIdentity();
 
@@ -121,6 +133,7 @@ export function PostCard({ post }: PostCardProps) {
     !contentPost.graphRef &&
     !contentPost.chain &&
     !isRepost;
+  const canShowMenu = (canModify || (isOwnPost && !!pinState)) && !isEditMode;
 
   const contentInitials = getInitials(contentPost.authorDisplayName);
   const contentAvatarUrl = contentPost.authorProfilePictureHash
@@ -171,6 +184,15 @@ export function PostCard({ post }: PostCardProps) {
         }
       }}
     >
+      {pinned && (
+        <div className="flex items-center gap-3 px-4 pt-2 text-sm text-muted-foreground">
+          <div className="flex w-10 shrink-0 justify-end">
+            <Pin className="h-4 w-4" />
+          </div>
+          <span>Pinned</span>
+        </div>
+      )}
+
       {isRepost && (
         <div className="flex items-center gap-3 px-4 pt-2 text-sm text-muted-foreground">
           <div className="flex w-10 shrink-0 justify-end">
@@ -243,7 +265,7 @@ export function PostCard({ post }: PostCardProps) {
               )}
             </div>
 
-            {canModify && !isEditMode && (
+            {canShowMenu && (
               <div
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => {
@@ -268,17 +290,36 @@ export function PostCard({ post }: PostCardProps) {
                     align="end"
                     onCloseAutoFocus={(e) => e.preventDefault()}
                   >
-                    <DropdownMenuItem onClick={handleStartEdit}>
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setShowDeleteDialog(true)}
-                      className="text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Delete
-                    </DropdownMenuItem>
+                    {pinState && (
+                      <DropdownMenuItem
+                        onClick={pinState.onToggle}
+                        disabled={pinState.pending}
+                      >
+                        {pinState.pinned ? (
+                          <PinOff className="h-4 w-4" />
+                        ) : (
+                          <Pin className="h-4 w-4" />
+                        )}
+                        {pinState.pinned
+                          ? "Unpin from profile"
+                          : "Pin to profile"}
+                      </DropdownMenuItem>
+                    )}
+                    {canModify && (
+                      <DropdownMenuItem onClick={handleStartEdit}>
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </DropdownMenuItem>
+                    )}
+                    {canModify && (
+                      <DropdownMenuItem
+                        onClick={() => setShowDeleteDialog(true)}
+                        className="text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

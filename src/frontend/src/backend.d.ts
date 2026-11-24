@@ -283,6 +283,7 @@ export interface UserProfileResponse {
     followingCount: bigint;
     isFollowedByCurrentUser: boolean;
     profilePictureHash?: ExternalBlob;
+    pinnedPostId?: bigint;
     postsCount: bigint;
 }
 export interface XyzCommitNode {
@@ -528,6 +529,7 @@ export interface backendInterface {
     markAllNotificationsRead(): Promise<void>;
     markNotificationRead(notifId: bigint): Promise<void>;
     muteUser(user: Principal): Promise<void>;
+    pinPost(postId: bigint): Promise<void>;
     previewXyzWriteForPost(postId: bigint): Promise<XyzPreviewResult>;
     quotePost(postId: bigint, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     reconcileAppLink(): Promise<{
@@ -576,6 +578,7 @@ export interface backendInterface {
         err: string;
     }>;
     unmuteUser(user: Principal): Promise<void>;
+    unpinPost(postId: bigint): Promise<void>;
     updateHeaderImage(imageHash: ExternalBlob | null): Promise<void>;
     updateProfilePicture(pictureHash: ExternalBlob | null): Promise<void>;
 }

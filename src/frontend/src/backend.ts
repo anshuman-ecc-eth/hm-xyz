@@ -327,6 +327,7 @@ export interface UserProfileResponse {
     followingCount: bigint;
     isFollowedByCurrentUser: boolean;
     profilePictureHash?: ExternalBlob;
+    pinnedPostId?: bigint;
     postsCount: bigint;
 }
 export interface XyzCommitNode {
@@ -592,6 +593,7 @@ export interface backendInterface {
     markAllNotificationsRead(): Promise<void>;
     markNotificationRead(notifId: bigint): Promise<void>;
     muteUser(user: Principal): Promise<void>;
+    pinPost(postId: bigint): Promise<void>;
     previewXyzWriteForPost(postId: bigint): Promise<XyzPreviewResult>;
     quotePost(postId: bigint, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     reconcileAppLink(): Promise<{
@@ -640,6 +642,7 @@ export interface backendInterface {
         err: string;
     }>;
     unmuteUser(user: Principal): Promise<void>;
+    unpinPost(postId: bigint): Promise<void>;
     updateHeaderImage(imageHash: ExternalBlob | null): Promise<void>;
     updateProfilePicture(pictureHash: ExternalBlob | null): Promise<void>;
 }
@@ -1463,6 +1466,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async pinPost(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.pinPost(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.pinPost(arg0);
+            return result;
+        }
+    }
     async previewXyzWriteForPost(arg0: bigint): Promise<XyzPreviewResult> {
         if (this.processError) {
             try {
@@ -1742,6 +1759,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.unmuteUser(arg0);
+            return result;
+        }
+    }
+    async unpinPost(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.unpinPost(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.unpinPost(arg0);
             return result;
         }
     }
@@ -2463,6 +2494,7 @@ async function from_candid_record_n92(_uploadFile: (file: ExternalBlob) => Promi
     followingCount: bigint;
     isFollowedByCurrentUser: boolean;
     profilePictureHash: [] | [_ExternalBlob];
+    pinnedPostId: [] | [bigint];
     postsCount: bigint;
 }): Promise<{
     bio: string;
@@ -2478,6 +2510,7 @@ async function from_candid_record_n92(_uploadFile: (file: ExternalBlob) => Promi
     followingCount: bigint;
     isFollowedByCurrentUser: boolean;
     profilePictureHash?: ExternalBlob;
+    pinnedPostId?: bigint;
     postsCount: bigint;
 }> {
     return {
@@ -2494,6 +2527,7 @@ async function from_candid_record_n92(_uploadFile: (file: ExternalBlob) => Promi
         followingCount: value.followingCount,
         isFollowedByCurrentUser: value.isFollowedByCurrentUser,
         profilePictureHash: record_opt_to_undefined(await from_candid_opt_n51(_uploadFile, _downloadFile, value.profilePictureHash)),
+        pinnedPostId: record_opt_to_undefined(from_candid_opt_n7(_uploadFile, _downloadFile, value.pinnedPostId)),
         postsCount: value.postsCount
     };
 }

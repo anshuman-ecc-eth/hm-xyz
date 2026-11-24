@@ -6,14 +6,47 @@ import {
   fetchGraphs,
   fetchNodes,
   resolveNodes,
+  trustUnits,
 } from "../lib/hyvmind";
 
 const STALE_MS = 60_000;
 
-export function useHyvmindGraphs() {
+export function useHyvmindGraphs(enabled = true) {
   return useQuery({
     queryKey: ["hyvmind", "graphs"],
     queryFn: fetchGraphs,
+    enabled,
+    staleTime: STALE_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+}
+
+/**
+ * The linked app principal's public trust, read from the published graphs'
+ * `authorDetails`. Trust is global in the app, so any graph that lists the
+ * principal carries the same score; taking the max is defensive against stale
+ * duplicates.
+ */
+export function useLinkedTrust(appPrincipal: string | null, enabled = true) {
+  const graphs = useHyvmindGraphs(enabled);
+
+  return useQuery({
+    queryKey: ["hyvmind", "linkedTrust", appPrincipal],
+    queryFn: () => {
+      if (!appPrincipal) return null;
+      let trust: number | null = null;
+      for (const graph of graphs.data ?? []) {
+        for (const author of graph.authorDetails ?? []) {
+          if (author.principal !== appPrincipal) continue;
+          const units = trustUnits(author.trustScore);
+          if (units === null) continue;
+          trust = trust === null ? units : Math.max(trust, units);
+        }
+      }
+      return trust;
+    },
+    enabled: enabled && !!appPrincipal && !!graphs.data,
     staleTime: STALE_MS,
     refetchOnWindowFocus: false,
     retry: 1,
