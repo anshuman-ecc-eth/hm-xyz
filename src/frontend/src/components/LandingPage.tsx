@@ -212,36 +212,56 @@ export function LandingPage() {
     if (!isLoggingIn || isLoginError) setPendingProvider(null);
   }, [isLoggingIn, isLoginError]);
 
-  // A hand-drawn underline under "own", drawn at half speed: it draws in over
-  // 1.4s, then clears a second later. rough-notation injects an absolutely
-  // positioned SVG after the span, so the paragraph is its containing block.
-  const ownRef = useRef<HTMLSpanElement | null>(null);
+  // A hand-drawn box around "own your interpretations", drawn slowly: it
+  // draws in over 1.75s, holds for 1s, then fades out. rough-notation injects
+  // an absolutely positioned SVG after the span, so the paragraph is its
+  // containing block. `multiline` draws one box per line if the phrase wraps.
+  const annotatedRef = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
-    const el = ownRef.current;
+    const el = annotatedRef.current;
     if (!el) return;
 
     const reduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    const duration = 1400;
+    const duration = 1750;
+    const holdMs = 1000;
+    const fadeMs = 400;
+
     const annotation = annotate(el, {
-      type: "underline",
+      type: "box",
+      multiline: true,
       color: "#ff3b30",
       strokeWidth: 2,
-      padding: 2,
+      padding: 3,
       iterations: 2,
       animate: !reduced,
       animationDuration: duration,
     });
     annotation.show();
 
+    // `hide()` pops the paths out in one frame, so arm an opacity transition
+    // up front and fade the injected SVG before removing it.
+    const svg = el.nextElementSibling;
+    const canFade = !reduced && svg instanceof SVGSVGElement;
+    if (canFade) svg.style.transition = `opacity ${fadeMs}ms ease-out`;
+
+    let fadeTimer: number | undefined;
     const timer = window.setTimeout(
-      () => annotation.hide(),
-      (reduced ? 0 : duration) + 1000,
+      () => {
+        if (!canFade) {
+          annotation.hide();
+          return;
+        }
+        svg.style.opacity = "0";
+        fadeTimer = window.setTimeout(() => annotation.hide(), fadeMs);
+      },
+      (reduced ? 0 : duration) + holdMs,
     );
 
     return () => {
       window.clearTimeout(timer);
+      if (fadeTimer !== undefined) window.clearTimeout(fadeTimer);
       annotation.remove();
     };
   }, []);
@@ -344,8 +364,8 @@ export function LandingPage() {
                 )}
               >
                 <p className="relative">
-                  With Hyvmind, you <span ref={ownRef}>own</span> your
-                  interpretations.
+                  With Hyvmind, you{" "}
+                  <span ref={annotatedRef}>own your interpretations</span>.
                 </p>
                 <p className="mt-6">
                   Each post is a token in an expanding artifact — recorded,
