@@ -307,6 +307,7 @@ export function PostCard({ post }: PostCardProps) {
               {contentPost.text && (
                 <PostText
                   text={contentPost.text}
+                  citations={contentPost.citations}
                   className="mt-1.5 whitespace-pre-wrap break-words font-sans text-[15px] leading-[1.55]"
                 />
               )}
@@ -414,6 +415,7 @@ export function PostCard({ post }: PostCardProps) {
                   {refPost.text && (
                     <PostText
                       text={refPost.text}
+                      citations={refPost.citations}
                       className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm"
                     />
                   )}

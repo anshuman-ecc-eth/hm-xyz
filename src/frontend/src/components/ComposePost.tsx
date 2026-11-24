@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { Link2, Loader2, Paperclip, X } from "lucide-react";
 import type React from "react";
-import { useId, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type {
   ChainInput,
@@ -17,6 +17,7 @@ import type {
   XyzPreviewResult,
 } from "../backend";
 import { useDebounce } from "../hooks/useDebounce";
+import { useAllHyvmindNodes } from "../hooks/useHyvmind";
 import { useMediaUpload } from "../hooks/useMediaUpload";
 import {
   useCommitXyzWrite,
@@ -30,8 +31,18 @@ import {
   useQuotePost,
   useSearchUsers,
 } from "../hooks/useQueries";
+import {
+  MAX_INLINE_CITATIONS,
+  type PickedCitation,
+  citationAt,
+  citationLabel,
+  citationsForText,
+  toGraphRefInput,
+} from "../lib/citations";
+import { type ResolvedNode, isCitable, searchNodes } from "../lib/hyvmind";
 import { useAppStore } from "../stores/useAppStore";
 import { fromNanoseconds, getInitials } from "../utils/formatting";
+import { InlineCitationSuggestions } from "./InlineCitationSuggestions";
 import { NodeCitationPicker } from "./NodeCitationPicker";
 import { PostText } from "./PostText";
 
@@ -121,6 +132,34 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
     Math.max(0, suggestions.length - 1),
   );
 
+  // Inline citation picker. Same interaction as mentions, but the text is
+  // `[[...]]` and a selection becomes a stored cross-reference.
+  const citeListId = useId();
+  const [citeStart, setCiteStart] = useState<number | null>(null);
+  const [citeQuery, setCiteQuery] = useState("");
+  const [activeCite, setActiveCite] = useState(0);
+  const [pickedCitations, setPickedCitations] = useState<PickedCitation[]>([]);
+  const inlineAllowed = !isReplyMode && !isQuoteMode;
+  const allNodes = useAllHyvmindNodes(citeStart != null && inlineAllowed);
+  const citableNodes = useMemo(
+    () => (allNodes.data ?? []).filter(isCitable),
+    [allNodes.data],
+  );
+  const citeResults = useMemo(
+    () => searchNodes(citableNodes, citeQuery, MAX_INLINE_CITATIONS),
+    [citableNodes, citeQuery],
+  );
+  const citeOpen = inlineAllowed && citeStart != null;
+  const activeCiteIndex = Math.min(
+    activeCite,
+    Math.max(0, citeResults.length - 1),
+  );
+  const pickedForText = useMemo(
+    () => citationsForText(text, pickedCitations),
+    [text, pickedCitations],
+  );
+  const inlineCount = pickedForText.length;
+
   // A reply or quote of a token inherits its node on the server; the composer
   // only shows it, and never lets the user change it.
   const inheritedRef = isReplyMode
@@ -129,13 +168,15 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
       ? quotedPost?.graphRef
       : undefined;
 
+  // Inline-only posts are graph posts too; the first marker anchors them.
+  const inlineAnchor = citation ?? pickedForText[0]?.ref ?? null;
   const isPending = isReplyMode
     ? isReplyPending
     : isQuoteMode
       ? isQuotePending
       : chain
         ? isChainPostPending
-        : citation
+        : inlineAnchor
           ? isGraphPostPending
           : isPostPending;
   const {
@@ -265,7 +306,26 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
       }
     }
 
-    const hadCitation = citation != null;
+    // The first surviving inline ref anchors the post when the Cite button and
+    // chain are both empty. Every surviving ref is stored so its marker links.
+    const publishable = citationsForText(text, pickedCitations);
+    const anchor = citation ?? publishable[0]?.ref ?? null;
+    const citationRefs = publishable.map((entry) => entry.ref);
+    const hadCitation = anchor != null;
+    const totalCitations =
+      publishable.length +
+      (citation &&
+      !publishable.some((entry) => entry.ref.nodeId === citation.nodeId)
+        ? 1
+        : 0);
+
+    const resetInlineRefs = () => {
+      setPickedCitations([]);
+      setCiteStart(null);
+      setCiteQuery("");
+      setActiveCite(0);
+    };
+
     const onSuccess = (created?: {
       id: bigint;
       graphRef?: { tokenNodeId?: string };
@@ -277,13 +337,18 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
       setChain(null);
       setMentionStart(null);
       setMentionQuery("");
+      resetInlineRefs();
       if (isQuoteMode) {
         clearCompose();
         toast.success("Quote posted");
       } else if (isReplyMode) {
         toast.success("Reply posted");
       } else if (hadCitation) {
-        toast.success("Posted with citation");
+        toast.success(
+          totalCitations > 1
+            ? `Posted with ${totalCitations} citations`
+            : "Posted with citation",
+        );
         // The post is only an anchor until the graph write is committed, so
         // hand its id to the card so the publish dialog can open itself.
         if (created?.graphRef && !created.graphRef.tokenNodeId) {
@@ -311,7 +376,13 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
       );
     } else if (chain) {
       createChainPost(
-        { chain, text: text.trim(), mediaHash, mediaType },
+        {
+          chain,
+          text: text.trim(),
+          mediaHash,
+          mediaType,
+          citations: citationRefs,
+        },
         {
           onSuccess: (created) => {
             setText("");
@@ -321,15 +392,22 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
             setCitation(null);
             setMentionStart(null);
             setMentionQuery("");
+            resetInlineRefs();
             toast.success("Chain posted — publishing…");
             void publishChain(created.id);
           },
           onError,
         },
       );
-    } else if (citation) {
+    } else if (anchor) {
       createGraphPost(
-        { ref: citation, text: text.trim(), mediaHash, mediaType },
+        {
+          ref: anchor,
+          text: text.trim(),
+          mediaHash,
+          mediaType,
+          citations: citationRefs,
+        },
         { onSuccess, onError },
       );
     } else {
@@ -344,6 +422,41 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSubmit();
+      return;
+    }
+
+    if (citeOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveCite((index) =>
+          citeResults.length > 0 ? (index + 1) % citeResults.length : 0,
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveCite((index) =>
+          citeResults.length > 0
+            ? (index - 1 + citeResults.length) % citeResults.length
+            : 0,
+        );
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setCiteStart(null);
+        setCiteQuery("");
+        setActiveCite(0);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        // Never submit while the citation picker owns the keyboard.
+        e.preventDefault();
+        if (citeResults.length > 0 && inlineCount < MAX_INLINE_CITATIONS) {
+          applyCitation(citeResults[activeCiteIndex]);
+        }
+        return;
+      }
       return;
     }
 
@@ -389,13 +502,51 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
     setMentionQuery(context.query);
   };
 
+  // Returns true when the citation picker is now active, so the mention picker
+  // can be suppressed: `[[@user]]` is a citation query, not a mention.
+  const syncCitation = (value: string, caret: number): boolean => {
+    if (!inlineAllowed) {
+      setCiteStart(null);
+      setCiteQuery("");
+      setActiveCite(0);
+      return false;
+    }
+    const context = citationAt(value, caret);
+    if (!context) {
+      setCiteStart(null);
+      setCiteQuery("");
+      setActiveCite(0);
+      return false;
+    }
+    if (context.query !== citeQuery) setActiveCite(0);
+    setCiteStart(context.start);
+    setCiteQuery(context.query);
+    return true;
+  };
+
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value);
-    syncMention(e.target.value, e.target.selectionStart ?? 0);
+    const value = e.target.value;
+    setText(value);
+    const caret = e.target.selectionStart ?? 0;
+    if (syncCitation(value, caret)) {
+      setMentionStart(null);
+      setMentionQuery("");
+      setActiveMention(0);
+    } else {
+      syncMention(value, caret);
+    }
   };
 
   const handleTextSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
-    syncMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0);
+    const value = e.currentTarget.value;
+    const caret = e.currentTarget.selectionStart ?? 0;
+    if (syncCitation(value, caret)) {
+      setMentionStart(null);
+      setMentionQuery("");
+      setActiveMention(0);
+    } else {
+      syncMention(value, caret);
+    }
   };
 
   const applyMention = (user: UserProfileResponse) => {
@@ -417,13 +568,41 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
     });
   };
 
+  const applyCitation = (node: ResolvedNode) => {
+    if (citeStart == null) return;
+    if (inlineCount >= MAX_INLINE_CITATIONS) return;
+    const el = textareaRef.current;
+    const caret = el?.selectionStart ?? text.length;
+    const label = citationLabel(node, citableNodes);
+    const before = text.slice(0, citeStart);
+    const after = text.slice(caret);
+    const needsSpace = after.length > 0 && !/^[\s.,;:!?)\]}]/.test(after);
+    const insertion = `[[${label}]]${needsSpace ? " " : ""}`;
+    const position = before.length + insertion.length;
+
+    setText(`${before}${insertion}${after}`);
+    setPickedCitations((prev) => [
+      ...prev,
+      { label, ref: toGraphRefInput(node) },
+    ]);
+    setCiteStart(null);
+    setCiteQuery("");
+    setActiveCite(0);
+
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(position, position);
+    });
+  };
+
   const handleDismissQuote = () => {
     clearCompose();
   };
 
   const isSubmitting = isPending || directPublishing || uploadProgress !== null;
 
-  const chainPriceTenths = chain ? chainCostTenths(chain) : 0;
+  const chainPriceTenths = chain ? chainCostTenths(chain) + inlineCount : 0;
   const chainUnaffordable =
     chain != null && buzz != null && buzz.units < BigInt(chainPriceTenths);
 
@@ -460,19 +639,37 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
           onChange={handleTextChange}
           onSelect={handleTextSelect}
           onKeyDown={handleKeyDown}
-          onBlur={() => setMentionStart(null)}
+          onBlur={() => {
+            setMentionStart(null);
+            setCiteStart(null);
+          }}
           disabled={isSubmitting}
           maxLength={20000}
           aria-autocomplete="list"
-          aria-expanded={mentionOpen}
-          aria-controls={mentionOpen ? mentionListId : undefined}
+          aria-expanded={citeOpen || mentionOpen}
+          aria-controls={
+            citeOpen ? citeListId : mentionOpen ? mentionListId : undefined
+          }
           className={cn(
             "resize-none rounded-none border-0 bg-transparent p-0 font-sans shadow-none placeholder:text-muted-foreground focus-visible:ring-0",
             isReplyMode ? "min-h-[60px] text-sm" : "min-h-[80px] text-[15px]",
           )}
         />
 
-        {mentionOpen && (
+        <InlineCitationSuggestions
+          open={citeOpen}
+          query={citeQuery}
+          results={citeResults}
+          loading={allNodes.isFetching}
+          error={!!allNodes.error}
+          highlighted={activeCiteIndex}
+          remaining={MAX_INLINE_CITATIONS - inlineCount}
+          listId={citeListId}
+          onHighlight={setActiveCite}
+          onSelect={applyCitation}
+        />
+
+        {mentionOpen && !citeOpen && (
           <div
             id={mentionListId}
             aria-label="Mention suggestions"
@@ -525,6 +722,24 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
           </div>
         )}
       </div>
+      {!inheritedRef &&
+        inlineAllowed &&
+        !citation &&
+        !chain &&
+        inlineCount > 0 && (
+          <div className="mt-2 flex items-center gap-2 border border-dashed border-border px-2 py-1.5">
+            <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
+              First citation anchors this post:{" "}
+              <span className="text-foreground">
+                [[{pickedForText[0].label}]]
+              </span>
+            </span>
+            <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+              {inlineCount}/{MAX_INLINE_CITATIONS}
+            </span>
+          </div>
+        )}
       {inheritedRef && (
         <div className="mt-2 flex items-center gap-2 border border-border px-2 py-1.5">
           <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -637,6 +852,7 @@ export function ComposePost({ replyToId, quotedPostId }: ComposePostProps) {
           </div>
           <PostText
             text={quotedPost.text}
+            citations={quotedPost.citations}
             className="mt-1 line-clamp-3 text-sm text-muted-foreground"
           />
         </div>

@@ -179,6 +179,13 @@ export const ChainView = IDL.Record({
   'start' : IDL.Opt(GraphRefInput),
   'levels' : IDL.Vec(ChainLevelView),
 });
+export const CitationRef = IDL.Record({
+  'nodeId' : IDL.Text,
+  'path' : IDL.Text,
+  'graphId' : IDL.Text,
+  'nodeName' : IDL.Text,
+  'nodeType' : IDL.Text,
+});
 export const PostResponse = IDL.Record({
   'id' : IDL.Nat,
   'dislikeCount' : IDL.Nat,
@@ -199,6 +206,7 @@ export const PostResponse = IDL.Record({
   'mediaHash' : IDL.Opt(ExternalBlob),
   'replyCount' : IDL.Nat,
   'mediaType' : IDL.Opt(IDL.Text),
+  'citations' : IDL.Vec(CitationRef),
   'canDelete' : IDL.Bool,
   'isDislikedByCurrentUser' : IDL.Bool,
   'editedAt' : IDL.Opt(Time),
@@ -389,12 +397,24 @@ export const idlService = IDL.Service({
     ),
   'confirmAppLink' : IDL.Func([IDL.Text], [LinkResult], []),
   'createChainPost' : IDL.Func(
-      [ChainInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
+      [
+        ChainInput,
+        IDL.Text,
+        IDL.Opt(ExternalBlob),
+        IDL.Opt(IDL.Text),
+        IDL.Vec(GraphRefInput),
+      ],
       [PostResponse],
       [],
     ),
   'createGraphPost' : IDL.Func(
-      [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
+      [
+        GraphRefInput,
+        IDL.Text,
+        IDL.Opt(ExternalBlob),
+        IDL.Opt(IDL.Text),
+        IDL.Vec(GraphRefInput),
+      ],
       [PostResponse],
       [],
     ),
@@ -752,6 +772,13 @@ export const idlFactory = ({ IDL }) => {
     'start' : IDL.Opt(GraphRefInput),
     'levels' : IDL.Vec(ChainLevelView),
   });
+  const CitationRef = IDL.Record({
+    'nodeId' : IDL.Text,
+    'path' : IDL.Text,
+    'graphId' : IDL.Text,
+    'nodeName' : IDL.Text,
+    'nodeType' : IDL.Text,
+  });
   const PostResponse = IDL.Record({
     'id' : IDL.Nat,
     'dislikeCount' : IDL.Nat,
@@ -772,6 +799,7 @@ export const idlFactory = ({ IDL }) => {
     'mediaHash' : IDL.Opt(ExternalBlob),
     'replyCount' : IDL.Nat,
     'mediaType' : IDL.Opt(IDL.Text),
+    'citations' : IDL.Vec(CitationRef),
     'canDelete' : IDL.Bool,
     'isDislikedByCurrentUser' : IDL.Bool,
     'editedAt' : IDL.Opt(Time),
@@ -959,12 +987,24 @@ export const idlFactory = ({ IDL }) => {
       ),
     'confirmAppLink' : IDL.Func([IDL.Text], [LinkResult], []),
     'createChainPost' : IDL.Func(
-        [ChainInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
+        [
+          ChainInput,
+          IDL.Text,
+          IDL.Opt(ExternalBlob),
+          IDL.Opt(IDL.Text),
+          IDL.Vec(GraphRefInput),
+        ],
         [PostResponse],
         [],
       ),
     'createGraphPost' : IDL.Func(
-        [GraphRefInput, IDL.Text, IDL.Opt(ExternalBlob), IDL.Opt(IDL.Text)],
+        [
+          GraphRefInput,
+          IDL.Text,
+          IDL.Opt(ExternalBlob),
+          IDL.Opt(IDL.Text),
+          IDL.Vec(GraphRefInput),
+        ],
         [PostResponse],
         [],
       ),

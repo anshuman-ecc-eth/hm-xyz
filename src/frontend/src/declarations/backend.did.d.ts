@@ -31,6 +31,13 @@ export interface ChainView {
   'start' : [] | [GraphRefInput],
   'levels' : Array<ChainLevelView>,
 }
+export interface CitationRef {
+  'nodeId' : string,
+  'path' : string,
+  'graphId' : string,
+  'nodeName' : string,
+  'nodeType' : string,
+}
 export interface CommunityMemberView {
   'principal' : Principal,
   'isCreator' : boolean,
@@ -171,6 +178,7 @@ export interface PostResponse {
   'mediaHash' : [] | [ExternalBlob],
   'replyCount' : bigint,
   'mediaType' : [] | [string],
+  'citations' : Array<CitationRef>,
   'canDelete' : boolean,
   'isDislikedByCurrentUser' : boolean,
   'editedAt' : [] | [Time],
@@ -364,11 +372,23 @@ export interface _SERVICE {
   'commitXyzWriteForPost' : ActorMethod<[bigint, string], XyzCommitOutcome>,
   'confirmAppLink' : ActorMethod<[string], LinkResult>,
   'createChainPost' : ActorMethod<
-    [ChainInput, string, [] | [ExternalBlob], [] | [string]],
+    [
+      ChainInput,
+      string,
+      [] | [ExternalBlob],
+      [] | [string],
+      Array<GraphRefInput>,
+    ],
     PostResponse
   >,
   'createGraphPost' : ActorMethod<
-    [GraphRefInput, string, [] | [ExternalBlob], [] | [string]],
+    [
+      GraphRefInput,
+      string,
+      [] | [ExternalBlob],
+      [] | [string],
+      Array<GraphRefInput>,
+    ],
     PostResponse
   >,
   'createPost' : ActorMethod<

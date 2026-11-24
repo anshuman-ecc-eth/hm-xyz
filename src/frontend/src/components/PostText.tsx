@@ -1,4 +1,6 @@
 import { Link } from "@tanstack/react-router";
+import type { CitationRef } from "../backend";
+import { markerTarget, matchCitation } from "../lib/citations";
 
 // Common TLDs for bare domain matching
 const TLDS =
@@ -11,9 +13,10 @@ const TLDS =
 const BARE_DOMAIN = `[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\\.(?:${TLDS})(?:[/][^\\s<>"')\\]]*)?`;
 
 const TOKEN_SPLIT = new RegExp(
-  `(#[a-zA-Z]\\w*|@[a-zA-Z0-9_]{3,20}|https?://[^\\s<>"')\\]]+|${BARE_DOMAIN})`,
+  `(!?\\[\\[[^\\]\\n]+\\]\\]|#[a-zA-Z]\\w*|@[a-zA-Z0-9_]{3,20}|https?://[^\\s<>"')\\]]+|${BARE_DOMAIN})`,
   "gi",
 );
+const CITATION_TEST = /^(!?)\[\[([^\]\n]+)\]\]$/;
 const HASHTAG_TEST = /^#[a-zA-Z]\w*$/;
 const MENTION_TEST = /^@[a-zA-Z0-9_]{3,20}$/;
 const URL_TEST = /^https?:\/\//;
@@ -27,14 +30,47 @@ function cleanUrl(url: string): string {
 interface PostTextProps {
   text: string;
   className?: string;
+  /** The refs stored on the post; markers without one stay plain text. */
+  citations?: CitationRef[];
 }
 
-export function PostText({ text, className }: PostTextProps) {
+export function PostText({ text, className, citations }: PostTextProps) {
   const parts = text.split(TOKEN_SPLIT);
+  const used = new Set<number>();
 
   return (
     <p className={className}>
       {parts.map((part, i) => {
+        const marker = CITATION_TEST.exec(part);
+        if (marker) {
+          // `![[...]]` is an Obsidian embed, not a citation. Leave it as text.
+          if (marker[1]) return part;
+          const target = markerTarget(marker[2]);
+          const citation = citations
+            ? matchCitation(target, citations, used)
+            : null;
+          if (!citation) return part;
+          const pipe = marker[2].indexOf("|");
+          const label =
+            (pipe >= 0 ? marker[2].slice(pipe + 1).trim() : "") || target;
+          return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: stable list
+            <span key={i}>
+              <span className="text-muted-foreground">[[</span>
+              <Link
+                to="/node/$graphId"
+                params={{ graphId: citation.graphId }}
+                search={{ node: citation.nodeId }}
+                className="text-primary underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                title={citation.path}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {label}
+              </Link>
+              <span className="text-muted-foreground">]]</span>
+            </span>
+          );
+        }
         if (HASHTAG_TEST.test(part)) {
           return (
             <Link

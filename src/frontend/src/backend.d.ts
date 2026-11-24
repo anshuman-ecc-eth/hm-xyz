@@ -33,6 +33,13 @@ export interface ChainView {
     start?: GraphRefInput;
     levels: Array<ChainLevelView>;
 }
+export interface CitationRef {
+    nodeId: string;
+    path: string;
+    graphId: string;
+    nodeName: string;
+    nodeType: string;
+}
 export interface CommunityMemberView {
     principal: Principal;
     isCreator: boolean;
@@ -221,6 +228,7 @@ export interface PostResponse {
     mediaHash?: ExternalBlob;
     replyCount: bigint;
     mediaType?: string;
+    citations: Array<CitationRef>;
     canDelete: boolean;
     isDislikedByCurrentUser: boolean;
     editedAt?: Time;
@@ -465,8 +473,8 @@ export interface backendInterface {
     checkUsernameAvailability(username: string): Promise<boolean>;
     commitXyzWriteForPost(postId: bigint, expectedDigest: string): Promise<XyzCommitOutcome>;
     confirmAppLink(code: string): Promise<LinkResult>;
-    createChainPost(chain: ChainInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
-    createGraphPost(ref: GraphRefInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
+    createChainPost(chain: ChainInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null, citations: Array<GraphRefInput>): Promise<PostResponse>;
+    createGraphPost(ref: GraphRefInput, text: string, mediaHash: ExternalBlob | null, mediaType: string | null, citations: Array<GraphRefInput>): Promise<PostResponse>;
     createPost(text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     createReply(parentPostId: bigint, text: string, mediaHash: ExternalBlob | null, mediaType: string | null): Promise<PostResponse>;
     declineCommunityInvite(communityId: string): Promise<void>;

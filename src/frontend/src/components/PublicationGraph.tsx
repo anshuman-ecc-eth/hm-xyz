@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useHyvmindGraphs, useHyvmindNodes } from "../hooks/useHyvmind";
 import { type ResolvedNode, trustUnits } from "../lib/hyvmind";
@@ -70,6 +71,30 @@ export function PublicationGraph({ post }: { post: Post }) {
     const author = graph?.authorDetails?.find((a) => a.principal === creator);
     return trustUnits(author?.trustScore);
   }, [graphRef?.tokenNodeId, graphRef?.graphId, nodes.data, graphs.data]);
+
+  // Additional inline cross-references, excluding the anchor (which has its own
+  // chip/diagram) and its enclosing law (a hierarchy edge, not a citation), and
+  // duplicate markers for the same node.
+  const anchorParentId = useMemo(() => {
+    const anchorId = graphRef?.nodeId;
+    if (!anchorId || !nodes.data) return null;
+    return nodes.data.find((node) => node.id === anchorId)?.parentId ?? null;
+  }, [graphRef?.nodeId, nodes.data]);
+
+  const crossRefs = useMemo(() => {
+    const seen = new Set<string>();
+    return (post.citations ?? []).filter((citation) => {
+      if (
+        citation.nodeId === graphRef?.nodeId ||
+        citation.nodeId === anchorParentId ||
+        seen.has(citation.nodeId)
+      ) {
+        return false;
+      }
+      seen.add(citation.nodeId);
+      return true;
+    });
+  }, [post.citations, graphRef?.nodeId, anchorParentId]);
 
   if (!graphRef?.tokenNodeId && !chainSpec) return null;
 
@@ -267,6 +292,27 @@ export function PublicationGraph({ post }: { post: Post }) {
           </g>
         )}
       </svg>
+
+      {crossRefs.length > 0 && (
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-border px-2.5 py-1.5 font-mono">
+          <span className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+            cites
+          </span>
+          {crossRefs.map((citation) => (
+            <Link
+              key={citation.nodeId}
+              to="/node/$graphId"
+              params={{ graphId: citation.graphId }}
+              search={{ node: citation.nodeId }}
+              className="text-[10px] text-primary underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              title={citation.path}
+              onClick={(e) => e.stopPropagation()}
+            >
+              [[{citation.nodeName}]]
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

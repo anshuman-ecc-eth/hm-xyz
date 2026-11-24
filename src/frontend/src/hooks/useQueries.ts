@@ -948,14 +948,16 @@ export function useCreateGraphPost() {
       text,
       mediaHash,
       mediaType,
+      citations,
     }: {
       ref: GraphRefInput;
       text: string;
       mediaHash: ExternalBlob | null;
       mediaType: string | null;
+      citations: GraphRefInput[];
     }) => {
       if (!actor) throw new Error("Actor not ready");
-      return actor.createGraphPost(ref, text, mediaHash, mediaType);
+      return actor.createGraphPost(ref, text, mediaHash, mediaType, citations);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["globalFeed"] });
@@ -976,14 +978,22 @@ export function useCreateChainPost() {
       text,
       mediaHash,
       mediaType,
+      citations,
     }: {
       chain: ChainInput;
       text: string;
       mediaHash: ExternalBlob | null;
       mediaType: string | null;
+      citations: GraphRefInput[];
     }) => {
       if (!actor) throw new Error("Actor not ready");
-      return actor.createChainPost(chain, text, mediaHash, mediaType);
+      return actor.createChainPost(
+        chain,
+        text,
+        mediaHash,
+        mediaType,
+        citations,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["globalFeed"] });

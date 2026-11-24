@@ -234,6 +234,7 @@ export function PostDetail() {
           <>
             <PostText
               text={post.text}
+              citations={post.citations}
               className="mt-3 whitespace-pre-wrap break-words text-base"
             />
             {post.chain ? (

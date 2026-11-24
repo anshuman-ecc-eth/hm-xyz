@@ -57,6 +57,17 @@ actor {
     tokenNodeId : ?Text;     // reserved: app token id once a write publishes this post
   };
 
+  // An inline cross-reference written as [[...]] in the post text. Narrower
+  // than GraphRef: attachedAt/hiddenAt/tokenNodeId belong to the anchor only,
+  // and `graphName` is not needed to link the node.
+  type CitationRef = {
+    graphId : Text;
+    nodeId : Text;
+    nodeName : Text;
+    nodeType : Text;
+    path : Text;
+  };
+
   // Client-supplied half. Server sets attachedAt, hiddenAt and tokenNodeId.
   type GraphRefInput = {
     graphId : Text;
@@ -147,6 +158,9 @@ actor {
     graphRef : ?GraphRef;
     // Present when this post declares new graph ancestors (a chain post).
     chain : ?ChainView;
+    // Inline [[...]] cross-references, in text order. The anchor may also
+    // appear here when the first inline ref was promoted to the anchor.
+    citations : [CitationRef];
     // Feeds return a bounded preview of very long posts; the detail call does not.
     textTruncated : Bool;
     weight : ?Int;                    // xyz weight: 1 + likes + reposts - dislikes
@@ -476,6 +490,9 @@ actor {
   // ── Graph tokens ────────────────────────────────────────────────────────────
   // Presence in postGraphRefs is what makes a post a graph post (a token).
   let postGraphRefs : Map.Map<Nat, GraphRef>;
+  // Inline [[...]] cross-references, in the order the markers appear. These
+  // are graph edges when the post is a token, and links otherwise.
+  let postCitations : Map.Map<Nat, [CitationRef]>;
   // Chain posts declare their new ancestors here. Presence marks a token even
   // before it has a graphRef (a brand-new curation has no graph id yet).
   let postChains : Map.Map<Nat, ChainSpec>;
@@ -515,6 +532,7 @@ actor {
   transient let maxPostLength : Nat = 20_000;
   transient let maxChainName : Nat = 120;
   transient let maxChainLevels : Nat = 4;
+  transient let maxInlineCitations : Nat = 8;
   transient let maxTextBytesPerUser : Nat = 20_000_000;
   // Feeds carry a bounded preview so a page of long posts cannot exceed the
   // 2 MB canister response limit. getPost returns the full body.
@@ -758,6 +776,51 @@ actor {
         if (n.size() > 400) { Runtime.trap("communityName too long") };
       };
       case (null) {};
+    };
+  };
+
+  // Inline refs are body metadata, not the anchor: they still need the same
+  // opaque-id and length checks, and only tokens can be cross-referenced.
+  func validateCitations(refs : [GraphRefInput]) {
+    if (refs.size() > maxInlineCitations) {
+      Runtime.trap("Too many cross-references (" # maxInlineCitations.toText() # " max)");
+    };
+    for (ref in refs.values()) {
+      validateGraphRef(ref);
+      if (not isCitableType(ref.nodeType)) {
+        Runtime.trap("Only law tokens and interpretations can be cross-referenced");
+      };
+    };
+  };
+
+  func normalizeCitations(refs : [GraphRefInput]) : [CitationRef] {
+    refs.map(
+      func(ref : GraphRefInput) : CitationRef {
+        {
+          graphId = ref.graphId;
+          nodeId = ref.nodeId;
+          nodeName = ref.nodeName;
+          nodeType = ref.nodeType;
+          path = ref.path;
+        };
+      }
+    );
+  };
+
+  func citationBytes(c : CitationRef) : Nat {
+    c.graphId.size() + c.nodeId.size() + c.nodeName.size() + c.nodeType.size() + c.path.size();
+  };
+
+  func citationsBytes(cs : [CitationRef]) : Nat {
+    var total = 0;
+    for (c in cs.values()) { total += citationBytes(c) };
+    total;
+  };
+
+  func citationsOf(postId : Nat) : [CitationRef] {
+    switch (postCitations.get(postId)) {
+      case (?c) { c };
+      case (null) { [] };
     };
   };
 
@@ -1157,7 +1220,9 @@ actor {
       case (?p) {
         posts.remove(id);
         decrementPostCount(p.author);
-        removeTextBytes(p.author, textBytes(p.text));
+        let citations = citationsOf(id);
+        removeTextBytes(p.author, textBytes(p.text) + citationsBytes(citations));
+        postCitations.remove(id);
         removePostHashtags(id, p.text);
         switch (p.postType) {
           case (#reply(parentId)) {
@@ -1655,7 +1720,7 @@ actor {
   func deriveTitle(text : Text) : ?Text {
     let stripped = text.map(
       func(c : Char) : Char {
-        if (c == '@' or c == '\t' or c == '\r') { ' ' } else { c };
+        if (c == '@' or c == '\t' or c == '\r' or c == '[' or c == ']') { ' ' } else { c };
       }
     );
     for (line in stripped.split(#char '\n')) {
@@ -1670,8 +1735,9 @@ actor {
 
   // ── Cost ────────────────────────────────────────────────────────────────────
   // Tenths of BUZZ, matching the app: 50 for the token itself, plus 1 when the
-  // citation adds a cross-reference edge. Attaching to a law citing that same
-  // law would be `#blocked` (hierarchyEdge), so laws cite nothing.
+  // interp anchor adds a cross-reference edge. Inline citations add one tenth
+  // each via draftCitationCount. A law anchor is a hierarchy edge, not a
+  // citation, so it contributes nothing here.
 
   func xyzCostTenths(nodeType : Text) : Nat {
     if (nodeType == "interpEntity") { 51 } else { 50 };
@@ -1683,6 +1749,46 @@ actor {
 
   func isCitableType(t : Text) : Bool {
     t == "lawEntity" or t == "interpEntity";
+  };
+
+  // Inline cross-references from a post, minus anything the app already implies
+  // through the parent chain. `excluded` is mutated as targets are consumed so
+  // duplicate markers collapse to one edge.
+  func writeCitations(postId : Nat, excluded : Map.Map<Text, Bool>) : [XyzCitation] {
+    let out = List.empty<XyzCitation>();
+    for (citation in citationsOf(postId).values()) {
+      if (excluded.get(citation.nodeId) == null) {
+        excluded.add(citation.nodeId, true);
+        out.add({
+          target = { ref = citation.nodeId; nodeType = ?citation.nodeType };
+          edgeLabel = "cites";
+          bidirectional = false;
+        });
+      };
+    };
+    out.toArray();
+  };
+
+  // The draft cost is shown before the app preview, which is authoritative.
+  // The interp anchor's enclosing law is only known after that read, so this
+  // may overestimate by one tenth when the enclosing law is also inline-cited.
+  func draftCitationCount(postId : Nat, ref : ?GraphRef, chain : ?ChainSpec) : Nat {
+    let excluded = Map.empty<Text, Bool>();
+    switch (chain) {
+      case (?spec) {
+        switch (spec.start) {
+          case (?start) { excluded.add(start.nodeId, true) };
+          case (null) {};
+        };
+      };
+      case (null) {
+        switch (ref) {
+          case (?r) { excluded.add(r.nodeId, true) };
+          case (null) {};
+        };
+      };
+    };
+    writeCitations(postId, excluded).size();
   };
 
   // The write payload is a pure function of the stored post and graph: no
@@ -1739,6 +1845,13 @@ actor {
         if (newAncestors.size() == 0) {
           return #err("This chain has no new nodes.");
         };
+        // The chain start is an existing ancestor, so citing it would be a
+        // hierarchyEdge block. New ancestors have no existing ids yet.
+        let excluded = Map.empty<Text, Bool>();
+        switch (spec.start) {
+          case (?start) { excluded.add(start.nodeId, true) };
+          case (null) {};
+        };
         return #ok({
           apiVersion = 1;
           title;
@@ -1748,7 +1861,7 @@ actor {
             nodeType = null;
           };
           ancestors = newAncestors;
-          citations = [];
+          citations = writeCitations(post.id, excluded);
         });
       };
       case (null) {};
@@ -1759,9 +1872,9 @@ actor {
       case (null) { return #err("Only graph posts can be published.") };
     };
 
-    let parentLaw : XyzRef = if (anchor.nodeType == "lawEntity") {
+    let (parentLaw, parentLawId) : (XyzRef, ?Text) = if (anchor.nodeType == "lawEntity") {
       // The cited law is the anchor. Citing it would be a hierarchyEdge block.
-      { ref = anchor.nodeId; nodeType = ?"lawEntity" };
+      ({ ref = anchor.nodeId; nodeType = ?"lawEntity" }, ?anchor.nodeId);
     } else if (anchor.nodeType == "interpEntity") {
       let graph = try {
         let app = appWrite();
@@ -1778,7 +1891,7 @@ actor {
         if (t.id == anchor.nodeId) { lawId := ?t.parentLawTokenId };
       };
       switch (lawId) {
-        case (?id) { { ref = id; nodeType = ?"lawEntity" } };
+        case (?id) { ({ ref = id; nodeType = ?"lawEntity" }, ?id) };
         case (null) {
           return #err("That interpretation is no longer in the graph.");
         };
@@ -1787,13 +1900,25 @@ actor {
       return #err("Only law tokens and interpretations can be published.");
     };
 
-    let citations : [XyzCitation] = if (anchor.nodeType == "interpEntity") {
-      [{
+    // The anchor and its enclosing law are implied by the hierarchy, not
+    // cross-references. Skip them, and skip duplicate inline markers.
+    let excluded = Map.empty<Text, Bool>();
+    excluded.add(anchor.nodeId, true);
+    switch (parentLawId) {
+      case (?id) { excluded.add(id, true) };
+      case (null) {};
+    };
+    let citations = List.empty<XyzCitation>();
+    if (anchor.nodeType == "interpEntity") {
+      citations.add({
         target = { ref = anchor.nodeId; nodeType = ?"interpEntity" };
         edgeLabel = "cites";
         bidirectional = false;
-      }]
-    } else { [] };
+      });
+    };
+    for (citation in writeCitations(post.id, excluded).values()) {
+      citations.add(citation);
+    };
 
     #ok({
       apiVersion = 1;
@@ -1801,7 +1926,7 @@ actor {
       content = post.text;
       parentLaw;
       ancestors = [];
-      citations;
+      citations = citations.toArray();
     });
   };
 
@@ -2150,6 +2275,7 @@ actor {
       isRepostedByCurrentUser = isReposted;
       graphRef;
       chain;
+      citations = citationsOf(post.id);
       textTruncated;
       weight = if (isToken) {
         ?(1 + likeCount.toInt() + repostCount.toInt() - dislikeCount.toInt())
@@ -2455,10 +2581,12 @@ actor {
     text : Text,
     mediaHash : ?Storage.ExternalBlob,
     mediaType : ?Text,
+    citations : [GraphRefInput],
   ) : async PostResponse {
     requireAuth(caller);
     validateMedia(mediaHash, mediaType);
     validateGraphRef(ref);
+    validateCitations(citations);
     requirePostCapNotReached(caller);
     switch (userProfiles.get(caller)) {
       case (null) { Runtime.trap("Must create profile before citing") };
@@ -2470,7 +2598,9 @@ actor {
     if (text.size() > maxPostLength) {
       Runtime.trap("Post is too long (20,000 characters max)");
     };
-    requireTextQuota(caller, textBytes(text));
+    let storedCitations = normalizeCitations(citations);
+    let contentBytes = textBytes(text) + citationsBytes(storedCitations);
+    requireTextQuota(caller, contentBytes);
 
     let now = Time.now();
     let id = nextPostId;
@@ -2488,10 +2618,13 @@ actor {
     };
 
     posts.add(id, post);
-    addTextBytes(caller, textBytes(text));
+    addTextBytes(caller, contentBytes);
     incrementPostCount(caller);
     indexPostHashtags(id, text);
     notifyMentions(text, id, caller);
+    if (storedCitations.size() > 0) {
+      postCitations.add(id, storedCitations);
+    };
 
     let graphRef : GraphRef = {
       graphId = ref.graphId;
@@ -2527,9 +2660,11 @@ actor {
     text : Text,
     mediaHash : ?Storage.ExternalBlob,
     mediaType : ?Text,
+    citations : [GraphRefInput],
   ) : async PostResponse {
     requireAuth(caller);
     validateMedia(mediaHash, mediaType);
+    validateCitations(citations);
     let spec = validateChain(chain);
     requirePostCapNotReached(caller);
     switch (userProfiles.get(caller)) {
@@ -2542,7 +2677,9 @@ actor {
     if (text.size() > maxPostLength) {
       Runtime.trap("Post is too long (20,000 characters max)");
     };
-    requireTextQuota(caller, textBytes(text));
+    let storedCitations = normalizeCitations(citations);
+    let contentBytes = textBytes(text) + citationsBytes(storedCitations);
+    requireTextQuota(caller, contentBytes);
 
     let now = Time.now();
     let id = nextPostId;
@@ -2560,10 +2697,13 @@ actor {
     };
 
     posts.add(id, post);
-    addTextBytes(caller, textBytes(text));
+    addTextBytes(caller, contentBytes);
     incrementPostCount(caller);
     indexPostHashtags(id, text);
     notifyMentions(text, id, caller);
+    if (storedCitations.size() > 0) {
+      postCitations.add(id, storedCitations);
+    };
 
     postChains.add(id, spec);
 
@@ -3316,8 +3456,8 @@ actor {
       case (#denied(d)) { (?d.message, ?d.reason) };
     };
     let cost = switch (chain) {
-      case (?spec) { chainCost(spec) };
-      case (null) { xyzCostTenths(nodeType) };
+      case (?spec) { chainCost(spec) + draftCitationCount(postId, ref, chain) };
+      case (null) { xyzCostTenths(nodeType) + draftCitationCount(postId, ref, chain) };
     };
     ?{
       postId;

@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Principal } from "@icp-sdk/core/principal";
 import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,6 +25,7 @@ import {
   useHyvmindGraphs,
   useHyvmindNodes,
 } from "../hooks/useHyvmind";
+import { toGraphRefInput } from "../lib/citations";
 import {
   type NodeSearchResult,
   type NodeType,
@@ -104,19 +104,7 @@ export function NodeCitationPicker({
   }, [highlighted]);
 
   function choose(node: ResolvedNode) {
-    onSelect({
-      graphId: node.graphId,
-      graphName: node.graphName,
-      nodeId: node.id,
-      nodeName: node.name,
-      nodeType: node.type,
-      path: node.path,
-      swarmNodeId: node.swarmNodeId ?? undefined,
-      swarmCreator: node.swarmCreator
-        ? Principal.fromText(node.swarmCreator)
-        : undefined,
-      communityName: node.swarmLabel ?? undefined,
-    });
+    onSelect(toGraphRefInput(node));
     onOpenChange(false);
   }
 
