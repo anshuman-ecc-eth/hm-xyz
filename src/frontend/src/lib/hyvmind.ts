@@ -18,6 +18,20 @@ export type NodeType =
   | "lawEntity"
   | "interpEntity";
 
+/** One contributor to a published graph, with their accumulated app trust. */
+export interface GraphAuthorDetail {
+  principal: string;
+  name: string;
+  /**
+   * Whole tokens with 7 decimals. The deployed API sends a number; the canister
+   * source builds the same figure as a decimal string, so accept both.
+   */
+  trustScore: string | number;
+  profileUrl?: string | null;
+  affiliation?: string | null;
+  identifier?: string | null;
+}
+
 export interface GraphMeta {
   id: string;
   name: string;
@@ -28,6 +42,23 @@ export interface GraphMeta {
   nodeCount: number;
   edgeCount: number;
   xyzWriteCount?: number;
+  /** Creator plus every extender; the only public per-principal trust source. */
+  authorDetails?: GraphAuthorDetail[];
+}
+
+/**
+ * Whole TRUST units from the app's 7-decimal figure, floored. Returns null for
+ * missing or malformed values so callers can omit the label instead of showing
+ * a wrong number.
+ */
+export function trustUnits(
+  score: string | number | null | undefined,
+): number | null {
+  if (score === null || score === undefined) return null;
+  const value = typeof score === "number" ? score : Number(score);
+  if (!Number.isFinite(value)) return null;
+  const whole = Math.trunc(value);
+  return whole < 0 ? null : whole;
 }
 
 export interface ApiNode {

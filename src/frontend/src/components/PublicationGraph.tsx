@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { useHyvmindNodes } from "../hooks/useHyvmind";
-import type { ResolvedNode } from "../lib/hyvmind";
+import { useHyvmindGraphs, useHyvmindNodes } from "../hooks/useHyvmind";
+import { type ResolvedNode, trustUnits } from "../lib/hyvmind";
 import { formatNodeType, getInitials } from "../utils/formatting";
 import type { GraphRef, Post } from "../utils/types";
 
@@ -29,7 +29,8 @@ export function PublicationGraph({ post }: { post: Post }) {
   const graphRef: GraphRef | undefined = post.graphRef;
   const chainSpec = post.chain;
   const published = !!graphRef?.tokenNodeId;
-  const nodes = useHyvmindNodes(chainSpec ? null : (graphRef?.graphId ?? null));
+  const graphs = useHyvmindGraphs();
+  const nodes = useHyvmindNodes(graphRef?.graphId ?? null);
 
   const ancestors = useMemo<ChainNode[]>(() => {
     // A chain post already knows its own path, so it works before publication.
@@ -56,6 +57,19 @@ export function PublicationGraph({ post }: { post: Post }) {
     }
     return out;
   }, [chainSpec, graphRef, nodes.data]);
+
+  // The publisher's app trust. xyz writes record `creator = writerApp` on the
+  // token they create, and `/api/graphs` lists that principal's score in
+  // authorDetails — so the published token is the join key.
+  const trust = useMemo<number | null>(() => {
+    const tokenId = graphRef?.tokenNodeId;
+    if (!tokenId || !nodes.data || !graphs.data) return null;
+    const creator = nodes.data.find((node) => node.id === tokenId)?.creator;
+    if (!creator) return null;
+    const graph = graphs.data.find((g) => g.id === graphRef?.graphId);
+    const author = graph?.authorDetails?.find((a) => a.principal === creator);
+    return trustUnits(author?.trustScore);
+  }, [graphRef?.tokenNodeId, graphRef?.graphId, nodes.data, graphs.data]);
 
   if (!graphRef?.tokenNodeId && !chainSpec) return null;
 
@@ -87,13 +101,27 @@ export function PublicationGraph({ post }: { post: Post }) {
         viewBox="0 0 640 210"
         className="block w-full font-mono"
         role="img"
-        aria-label={`${post.authorDisplayName} ${published ? "published" : "proposes"} an interpretation of ${cited.name} in ${graphName}`}
+        aria-label={`${post.authorDisplayName} ${published ? "published" : "proposes"} an interpretation of ${cited.name} in ${graphName}${trust !== null ? `, ${trust} trust` : ""}`}
       >
         <defs>
           <clipPath id={avatarClip}>
             <circle cx="58" cy="96" r="21" />
           </clipPath>
         </defs>
+
+        {/* Trust sits in the otherwise empty band above the avatar. */}
+        {trust !== null && (
+          <text
+            x="58"
+            y="67"
+            textAnchor="middle"
+            fontSize="9"
+            letterSpacing="0.06em"
+            className="fill-foreground"
+          >
+            {trust} TRUST
+          </text>
+        )}
 
         {/* Social side: the author */}
         {avatarUrl ? (
