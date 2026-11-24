@@ -3,8 +3,9 @@ import Time "mo:core/Time";
 import Storage "mo:caffeineai-object-storage/Storage";
 import AccessControl "mo:caffeineai-authorization/access-control";
 
-// Adds the profile pin: one post id per principal. OldActor is exactly the
-// codomain of 20261122_040245; existing users start with no pin.
+// Bridges the deployed 20261122 state to inline citations and profile pins.
+// OldActor is exactly the codomain of 20261122_040245, which is deployed and
+// frozen; this build adds the postCitations and pinnedPosts maps.
 module {
   type UserProfile = {
     username : Text;
@@ -190,7 +191,6 @@ module {
     userNotifications : Map.Map<Principal, Map.Map<Nat, Notification>>;
     var nextNotificationId : Nat;
     postGraphRefs : Map.Map<Nat, GraphRef>;
-    postCitations : Map.Map<Nat, [CitationRef]>;
     graphNodePosts : Map.Map<Text, Map.Map<Text, Map.Map<Nat, Bool>>>;
     postDislikes : Map.Map<Nat, Map.Map<Principal, Bool>>;
     linkByXyz : Map.Map<Principal, LinkState>;
@@ -265,7 +265,7 @@ module {
       userNotifications = old.userNotifications;
       var nextNotificationId = old.nextNotificationId;
       postGraphRefs = old.postGraphRefs;
-      postCitations = old.postCitations;
+      postCitations = Map.empty();
       graphNodePosts = old.graphNodePosts;
       postDislikes = old.postDislikes;
       linkByXyz = old.linkByXyz;

@@ -3,9 +3,8 @@ import Time "mo:core/Time";
 import Storage "mo:caffeineai-object-storage/Storage";
 import AccessControl "mo:caffeineai-authorization/access-control";
 
-// Adds swarm communities, the captured enclosing swarm, and per-post inline
-// cross-references. OldActor is exactly the codomain of 20261121_220000, which
-// is deployed and frozen.
+// Adds swarm communities and the captured enclosing swarm. OldActor is exactly
+// the codomain of 20261121_220000, which is deployed and frozen.
 module {
   type UserProfile = {
     username : Text;
@@ -113,14 +112,6 @@ module {
     communityName : ?Text;
   };
 
-  type CitationRef = {
-    graphId : Text;
-    nodeId : Text;
-    nodeName : Text;
-    nodeType : Text;
-    path : Text;
-  };
-
   type SwarmCapture = {
     swarmNodeId : Text;
     swarmCreator : ?Principal;
@@ -218,7 +209,6 @@ module {
     userNotifications : Map.Map<Principal, Map.Map<Nat, Notification>>;
     var nextNotificationId : Nat;
     postGraphRefs : Map.Map<Nat, GraphRef>;
-    postCitations : Map.Map<Nat, [CitationRef]>;
     graphNodePosts : Map.Map<Text, Map.Map<Text, Map.Map<Nat, Bool>>>;
     postDislikes : Map.Map<Nat, Map.Map<Principal, Bool>>;
     linkByXyz : Map.Map<Principal, LinkState>;
@@ -263,7 +253,6 @@ module {
       );
       var nextNotificationId = old.nextNotificationId;
       postGraphRefs = old.postGraphRefs;
-      postCitations = Map.empty();
       graphNodePosts = old.graphNodePosts;
       postDislikes = old.postDislikes;
       linkByXyz = old.linkByXyz;

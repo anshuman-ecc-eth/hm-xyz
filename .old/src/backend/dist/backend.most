@@ -4,6 +4,14 @@ type AccessControlState__548729501 =
     var adminAssigned : Bool;
     userRoles : Map__166311111<Principal, UserRole__364273487>
   };
+type ChainLevel__1047111892 =
+  {
+    attributes : [(Text, [Text])];
+    name : Text;
+    nodeType : Text;
+    sources : [XyzSourceRef__127043014];
+    tags : [Text]
+  };
 type ChainLevel__167688223 =
   {
     attributes : [(Text, [Text])];
@@ -24,17 +32,76 @@ type ChainSpec__343470779 =
   {levels : [ChainLevel__167688223]; start : ?GraphRefInput__588196040};
 type ChainSpec__46663601 =
   {levels : [ChainLevel__240072248]; start : ?GraphRefInput__388777532};
+type ChainSpec__772945318 =
+  {levels : [ChainLevel__1047111892]; start : ?GraphRefInput__229247527};
+type CommunityInvite__586231188 =
+  {createdAt : Time__433203383; invitedBy : Principal};
+type CommunityInvite__767893570 =
+  {createdAt : Time__433203383; invitedBy : Principal};
+type CommunityMember__497060015 = {joinedAt : Time__433203383};
+type CommunityMember__51147264 = {joinedAt : Time__433203383};
+type CommunityMessage__4871486 =
+  {
+    author : Principal;
+    communityId : Text;
+    createdAt : Time__433203383;
+    id : Nat;
+    text : Text
+  };
+type CommunityMessage__615321847 =
+  {
+    author : Principal;
+    communityId : Text;
+    createdAt : Time__433203383;
+    id : Nat;
+    text : Text
+  };
+type Community__732915864 =
+  {
+    createdAt : Time__433203383;
+    creator : Principal;
+    graphId : Text;
+    id : Text;
+    lastMessageAt : ?Time__433203383;
+    memberCount : Nat;
+    name : Text
+  };
+type Community__761676660 =
+  {
+    createdAt : Time__433203383;
+    creator : Principal;
+    graphId : Text;
+    id : Text;
+    lastMessageAt : ?Time__433203383;
+    memberCount : Nat;
+    name : Text
+  };
 type Data__462339193<K, V> =
   {var count : Nat__796014343; kvs : [var ?(K, V)]};
 type ExternalBlob__716749638 = Blob;
-type GraphRefInput__388777532 =
+type GraphRefInput__229247527 =
   {
+    communityName : ?Text;
     graphId : Text;
     graphName : Text;
     nodeId : Text;
     nodeName : Text;
     nodeType : Text;
-    path : Text
+    path : Text;
+    swarmCreator : ?Principal;
+    swarmNodeId : ?Text
+  };
+type GraphRefInput__388777532 =
+  {
+    communityName : ?Text;
+    graphId : Text;
+    graphName : Text;
+    nodeId : Text;
+    nodeName : Text;
+    nodeType : Text;
+    path : Text;
+    swarmCreator : ?Principal;
+    swarmNodeId : ?Text
   };
 type GraphRefInput__588196040 =
   {
@@ -93,11 +160,25 @@ type GraphRef__716062579 =
     path : Text;
     tokenNodeId : ?Text
   };
+type GraphRef__99619426 =
+  {
+    attachedAt : Time__433203383;
+    graphId : Text;
+    graphName : Text;
+    hiddenAt : ?Time__433203383;
+    nodeId : Text;
+    nodeName : Text;
+    nodeType : Text;
+    path : Text;
+    tokenNodeId : ?Text
+  };
 type Int__1019492393 = Int__616954475;
 type Int__616954475 = Int;
 type Internal__572103086<K, V> =
   {children : [var ?Node__305750417<K, V>]; data : Data__462339193<K, V>};
 type Leaf__868027<K, V> = {data : Data__462339193<K, V>};
+type LinkState__14386070 =
+  {appPrincipal : Principal; displayName : ?Text; linkedAt : Time__433203383};
 type LinkState__488571612 =
   {appPrincipal : Principal; displayName : ?Text; linkedAt : Time__433203383};
 type LinkState__547392089 =
@@ -135,6 +216,48 @@ type NewActor__201737212 =
       Map__166311111<Principal, Map__166311111<Nat, Notification__910941465>>;
     userPostCounts : Map__166311111<Principal, Nat>;
     userProfiles : Map__166311111<Principal, UserProfile__212281134>;
+    usernameToUser : Map__166311111<Text, Principal>
+  };
+type NewActor__225997790 =
+  {
+    accessControlState : AccessControlState__548729501;
+    appToXyz : Map__166311111<Principal, Principal>;
+    blocks : Map__166311111<Principal, Map__166311111<Principal, Bool>>;
+    communities : Map__166311111<Text, Community__761676660>;
+    communityInvites :
+      Map__166311111<Text,
+                      Map__166311111<Principal, CommunityInvite__767893570>>;
+    communityMembers :
+      Map__166311111<Text,
+                      Map__166311111<Principal, CommunityMember__51147264>>;
+    communityMessages :
+      Map__166311111<Text, Map__166311111<Nat, CommunityMessage__615321847>>;
+    followers : Map__166311111<Principal, Map__166311111<Principal, Bool>>;
+    following : Map__166311111<Principal, Map__166311111<Principal, Bool>>;
+    graphNodePosts :
+      Map__166311111<Text, Map__166311111<Text, Map__166311111<Nat, Bool>>>;
+    hashtagIndex : Map__166311111<Text, Map__166311111<Nat, Bool>>;
+    inviteIndex : Map__166311111<Principal, Map__166311111<Text, Bool>>;
+    linkByXyz : Map__166311111<Principal, LinkState__14386070>;
+    memberCommunities : Map__166311111<Principal, Map__166311111<Text, Bool>>;
+    mutes : Map__166311111<Principal, Map__166311111<Principal, Bool>>;
+    var nextCommunityMessageId : Nat;
+    var nextNotificationId : Nat;
+    var nextPostId : Nat;
+    postChains : Map__166311111<Nat, ChainSpec__772945318>;
+    postDislikes : Map__166311111<Nat, Map__166311111<Principal, Bool>>;
+    postGraphRefs : Map__166311111<Nat, GraphRef__99619426>;
+    postLikes : Map__166311111<Nat, Map__166311111<Principal, Bool>>;
+    postReplies : Map__166311111<Nat, Map__166311111<Nat, Bool>>;
+    postReposts : Map__166311111<Nat, Map__166311111<Principal, Bool>>;
+    postSwarm : Map__166311111<Nat, SwarmCapture__805157993>;
+    posts : Map__166311111<Nat, Post__735075652>;
+    repostIndex : Map__166311111<Principal, Map__166311111<Nat, Nat>>;
+    userNotifications :
+      Map__166311111<Principal, Map__166311111<Nat, Notification__62796882>>;
+    userPostCounts : Map__166311111<Principal, Nat>;
+    userProfiles : Map__166311111<Principal, UserProfile__288037668>;
+    userTextBytes : Map__166311111<Principal, Nat>;
     usernameToUser : Map__166311111<Text, Principal>
   };
 type NewActor__484363498 =
@@ -204,6 +327,17 @@ type NotificationType__129811850 =
   };
 type NotificationType__228116445 =
   {
+    #communityInvite : Text;
+    #follow;
+    #like : Nat;
+    #mention : Nat;
+    #quote : Nat;
+    #reply : Nat;
+    #repost : Nat
+  };
+type NotificationType__3040462 =
+  {
+    #communityInvite : Text;
     #follow;
     #like : Nat;
     #mention : Nat;
@@ -265,6 +399,15 @@ type Notification__360209481 =
     isRead : Bool;
     notificationType : NotificationType__228116445
   };
+type Notification__62796882 =
+  {
+    actorPrincipal : Principal;
+    actorUsername : Text;
+    createdAt : Time__433203383;
+    id : Nat;
+    isRead : Bool;
+    notificationType : NotificationType__3040462
+  };
 type Notification__836758254 =
   {
     actorPrincipal : Principal;
@@ -306,6 +449,36 @@ type OldActor__774183902 =
       Map__166311111<Principal, Map__166311111<Nat, Notification__910941465>>;
     userPostCounts : Map__166311111<Principal, Nat>;
     userProfiles : Map__166311111<Principal, UserProfile__212281134>;
+    usernameToUser : Map__166311111<Text, Principal>
+  };
+type OldActor__788281926 =
+  {
+    accessControlState : AccessControlState__548729501;
+    appToXyz : Map__166311111<Principal, Principal>;
+    blocks : Map__166311111<Principal, Map__166311111<Principal, Bool>>;
+    followers : Map__166311111<Principal, Map__166311111<Principal, Bool>>;
+    following : Map__166311111<Principal, Map__166311111<Principal, Bool>>;
+    graphNodePosts :
+      Map__166311111<Text, Map__166311111<Text, Map__166311111<Nat, Bool>>>;
+    hashtagIndex : Map__166311111<Text, Map__166311111<Nat, Bool>>;
+    linkByXyz : Map__166311111<Principal, LinkState__14386070>;
+    mutes : Map__166311111<Principal, Map__166311111<Principal, Bool>>;
+    var nextNotificationId : Nat;
+    var nextPostId : Nat;
+    postChains : Map__166311111<Nat, OldChainSpec__468772510>;
+    postDislikes : Map__166311111<Nat, Map__166311111<Principal, Bool>>;
+    postGraphRefs : Map__166311111<Nat, GraphRef__99619426>;
+    postLikes : Map__166311111<Nat, Map__166311111<Principal, Bool>>;
+    postReplies : Map__166311111<Nat, Map__166311111<Nat, Bool>>;
+    postReposts : Map__166311111<Nat, Map__166311111<Principal, Bool>>;
+    posts : Map__166311111<Nat, Post__735075652>;
+    repostIndex : Map__166311111<Principal, Map__166311111<Nat, Nat>>;
+    userNotifications :
+      Map__166311111<Principal,
+                      Map__166311111<Nat, OldNotification__935894004>>;
+    userPostCounts : Map__166311111<Principal, Nat>;
+    userProfiles : Map__166311111<Principal, UserProfile__288037668>;
+    userTextBytes : Map__166311111<Principal, Nat>;
     usernameToUser : Map__166311111<Text, Principal>
   };
 type OldActor__893416915 =
@@ -356,11 +529,42 @@ type OldActor__894636723 =
     userProfiles : Map__166311111<Principal, UserProfile__369739191>;
     usernameToUser : Map__166311111<Text, Principal>
   };
+type OldChainSpec__468772510 =
+  {levels : [ChainLevel__1047111892]; start : ?OldGraphRefInput__941445771};
+type OldGraphRefInput__941445771 =
+  {
+    graphId : Text;
+    graphName : Text;
+    nodeId : Text;
+    nodeName : Text;
+    nodeType : Text;
+    path : Text
+  };
+type OldNotificationType__274075983 =
+  {
+    #follow;
+    #like : Nat;
+    #mention : Nat;
+    #quote : Nat;
+    #reply : Nat;
+    #repost : Nat
+  };
+type OldNotification__935894004 =
+  {
+    actorPrincipal : Principal;
+    actorUsername : Text;
+    createdAt : Time__433203383;
+    id : Nat;
+    isRead : Bool;
+    notificationType : OldNotificationType__274075983
+  };
 type PostType__544258662 =
   {#original; #quote : Nat; #reply : Nat; #repost : Nat};
 type PostType__732490591 =
   {#original; #quote : Nat; #reply : Nat; #repost : Nat};
 type PostType__768914583 =
+  {#original; #quote : Nat; #reply : Nat; #repost : Nat};
+type PostType__864943901 =
   {#original; #quote : Nat; #reply : Nat; #repost : Nat};
 type PostType__902960549 =
   {#original; #quote : Nat; #reply : Nat; #repost : Nat};
@@ -386,6 +590,17 @@ type Post__398532481 =
     mediaHash : ?ExternalBlob__716749638;
     mediaType : ?Text;
     postType : PostType__998991040;
+    text : Text
+  };
+type Post__735075652 =
+  {
+    author : Principal;
+    createdAt : Time__433203383;
+    editedAt : ?Time__433203383;
+    id : Nat;
+    mediaHash : ?ExternalBlob__716749638;
+    mediaType : ?Text;
+    postType : PostType__864943901;
     text : Text
   };
 type Post__752197914 =
@@ -421,9 +636,23 @@ type Post__999376604 =
     postType : PostType__902960549;
     text : Text
   };
+type SwarmCapture__653724169 =
+  {communityName : ?Text; swarmCreator : ?Principal; swarmNodeId : Text};
+type SwarmCapture__805157993 =
+  {communityName : ?Text; swarmCreator : ?Principal; swarmNodeId : Text};
 type Time__433203383 = Time__873547510;
 type Time__873547510 = Int__1019492393;
 type UserProfile__212281134 =
+  {
+    bio : Text;
+    createdAt : Time__433203383;
+    displayName : Text;
+    headerImageHash : ?ExternalBlob__716749638;
+    profilePictureHash : ?ExternalBlob__716749638;
+    updatedAt : Time__433203383;
+    username : Text
+  };
+type UserProfile__288037668 =
   {
     bio : Text;
     createdAt : Time__433203383;
@@ -474,6 +703,7 @@ type UserProfile__852920818 =
     username : Text
   };
 type UserRole__364273487 = {#admin; #guest; #user};
+type XyzSourceRef__127043014 = {name : Text; url : Text};
 type XyzSourceRef__177896034 = {name : Text; url : Text};
 type XyzSourceRef__958484092 = {name : Text; url : Text};
 {
@@ -504,7 +734,8 @@ type XyzSourceRef__958484092 = {name : Text; url : Text};
       };
   "20261119_000000" : (old : OldActor__893416915) -> NewActor__533339048;
   "20261119_090000" : (old : OldActor__774183902) -> NewActor__201737212;
-  "20261121_220000" : (old : OldActor__894636723) -> NewActor__484363498
+  "20261121_220000" : (old : OldActor__894636723) -> NewActor__484363498;
+  "20261122_040245" : (old : OldActor__788281926) -> NewActor__225997790
 }
 actor  {
   stable accessControlState :
@@ -520,6 +751,31 @@ actor  {
   stable blocks :
     {
       var root : Node__305750417<Principal, Map__166311111<Principal, Bool>>;
+      var size : Nat__796014343
+    };
+  stable communities :
+    {
+      var root : Node__305750417<Text, Community__732915864>;
+      var size : Nat__796014343
+    };
+  stable communityInvites :
+    {
+      var root :
+        Node__305750417<Text,
+                         Map__166311111<Principal, CommunityInvite__586231188>>;
+      var size : Nat__796014343
+    };
+  stable communityMembers :
+    {
+      var root :
+        Node__305750417<Text,
+                         Map__166311111<Principal, CommunityMember__497060015>>;
+      var size : Nat__796014343
+    };
+  stable communityMessages :
+    {
+      var root :
+        Node__305750417<Text, Map__166311111<Nat, CommunityMessage__4871486>>;
       var size : Nat__796014343
     };
   stable followers :
@@ -543,9 +799,19 @@ actor  {
       var root : Node__305750417<Text, Map__166311111<Nat, Bool>>;
       var size : Nat__796014343
     };
+  stable inviteIndex :
+    {
+      var root : Node__305750417<Principal, Map__166311111<Text, Bool>>;
+      var size : Nat__796014343
+    };
   stable linkByXyz :
     {
       var root : Node__305750417<Principal, LinkState__547392089>;
+      var size : Nat__796014343
+    };
+  stable memberCommunities :
+    {
+      var root : Node__305750417<Principal, Map__166311111<Text, Bool>>;
       var size : Nat__796014343
     };
   stable mutes :
@@ -553,6 +819,7 @@ actor  {
       var root : Node__305750417<Principal, Map__166311111<Principal, Bool>>;
       var size : Nat__796014343
     };
+  stable var nextCommunityMessageId : Nat;
   stable var nextNotificationId : Nat;
   stable var nextPostId : Nat;
   stable postChains :
@@ -583,6 +850,11 @@ actor  {
   stable postReposts :
     {
       var root : Node__305750417<Nat, Map__166311111<Principal, Bool>>;
+      var size : Nat__796014343
+    };
+  stable postSwarm :
+    {
+      var root : Node__305750417<Nat, SwarmCapture__653724169>;
       var size : Nat__796014343
     };
   stable posts :
