@@ -32,9 +32,21 @@ interface PostTextProps {
   className?: string;
   /** The refs stored on the post; markers without one stay plain text. */
   citations?: CitationRef[];
+  /**
+   * "app" keeps router links (node page, hashtag, profile). "public" is for the
+   * standalone post page: citations open the public curation page, while
+   * hashtags and mentions stay plain text so signed-out readers never hit the
+   * app's sign-in wall.
+   */
+  mode?: "app" | "public";
 }
 
-export function PostText({ text, className, citations }: PostTextProps) {
+export function PostText({
+  text,
+  className,
+  citations,
+  mode = "app",
+}: PostTextProps) {
   const parts = text.split(TOKEN_SPLIT);
   const used = new Set<number>();
 
@@ -57,21 +69,36 @@ export function PostText({ text, className, citations }: PostTextProps) {
             // biome-ignore lint/suspicious/noArrayIndexKey: stable list
             <span key={i}>
               <span className="text-muted-foreground">[[</span>
-              <Link
-                to="/node/$graphId"
-                params={{ graphId: citation.graphId }}
-                search={{ node: citation.nodeId }}
-                className="text-primary underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                title={citation.path}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {label}
-              </Link>
+              {mode === "public" ? (
+                <a
+                  href={`/curations/${encodeURIComponent(citation.graphId)}?node=${encodeURIComponent(citation.nodeId)}`}
+                  className="text-primary underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                  title={citation.path}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {label}
+                </a>
+              ) : (
+                <Link
+                  to="/node/$graphId"
+                  params={{ graphId: citation.graphId }}
+                  search={{ node: citation.nodeId }}
+                  className="text-primary underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                  title={citation.path}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {label}
+                </Link>
+              )}
               <span className="text-muted-foreground">]]</span>
             </span>
           );
         }
         if (HASHTAG_TEST.test(part)) {
+          if (mode === "public") {
+            // biome-ignore lint/suspicious/noArrayIndexKey: stable list
+            return <span key={i}>{part}</span>;
+          }
           return (
             <Link
               // biome-ignore lint/suspicious/noArrayIndexKey: stable list
@@ -86,6 +113,10 @@ export function PostText({ text, className, citations }: PostTextProps) {
           );
         }
         if (MENTION_TEST.test(part)) {
+          if (mode === "public") {
+            // biome-ignore lint/suspicious/noArrayIndexKey: stable list
+            return <span key={i}>{part}</span>;
+          }
           return (
             <Link
               // biome-ignore lint/suspicious/noArrayIndexKey: stable list

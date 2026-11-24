@@ -61,6 +61,28 @@ export function trustUnits(
   return whole < 0 ? null : whole;
 }
 
+/**
+ * Whole TRUST units summed across every contributor (creator plus extenders).
+ * Floors once after summing, so two 0.9s read as 1, not 0. Returns null when
+ * there is nothing to sum, so an unknown total is never shown as 0.
+ */
+export function totalTrustUnits(
+  details: GraphAuthorDetail[] | undefined,
+): number | null {
+  if (!details || details.length === 0) return null;
+  let total = 0;
+  let seen = false;
+  for (const detail of details) {
+    const raw = detail.trustScore;
+    const value = typeof raw === "number" ? raw : Number(raw);
+    if (!Number.isFinite(value) || value < 0) continue;
+    total += value;
+    seen = true;
+  }
+  if (!seen) return null;
+  return Math.trunc(total);
+}
+
 export interface ApiNode {
   id: string;
   name: string;
@@ -174,6 +196,32 @@ export async function fetchNodes(
     nodes: body as ApiNode[],
     revision: Number.isFinite(parsed) ? parsed : null,
   };
+}
+
+export interface ApiGraphEdge {
+  source: string;
+  target: string;
+  label?: string;
+  bidirectional?: boolean;
+}
+
+/**
+ * The whole published graph. Unlike `/api/graphs`, this includes the nodes and
+ * edges themselves; the per-type arrays are how the app serialises them.
+ */
+export interface ApiGraphData {
+  curations: ApiNode[];
+  swarms: ApiNode[];
+  locations: ApiNode[];
+  lawTokens: ApiNode[];
+  interpretationTokens: ApiNode[];
+  edges: ApiGraphEdge[];
+  revision?: number;
+}
+
+export async function fetchGraphData(graphId: string): Promise<ApiGraphData> {
+  const { body } = await apiGet(`/api/graphs/${encodeURIComponent(graphId)}`);
+  return body as ApiGraphData;
 }
 
 /**

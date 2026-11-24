@@ -35,6 +35,7 @@ import { EditPostForm } from "./EditPostForm";
 import { PostText } from "./PostText";
 import { PublicationGraph } from "./PublicationGraph";
 import { PublishToGraph } from "./PublishToGraph";
+import { SharePostButton } from "./SharePostButton";
 
 interface PostCardProps {
   post: Post;
@@ -60,6 +61,8 @@ export function PostCard({ post }: PostCardProps) {
   // For reposts, display and interact with the original post
   const contentPost = isRepost && refPost ? refPost : post;
   const actionPost = isRepost && refPost ? refPost : post;
+  // A repost shares the original's public URL, matching likes and replies.
+  const sharePostId = isRepost ? (referencedPostId ?? post.id) : post.id;
 
   const {
     isEditMode,
@@ -591,6 +594,7 @@ export function PostCard({ post }: PostCardProps) {
                     W {actionPost.weight?.toString() ?? "0"}
                   </span>
                 )}
+                <SharePostButton postId={sharePostId} />
               </div>
             </>
           )}

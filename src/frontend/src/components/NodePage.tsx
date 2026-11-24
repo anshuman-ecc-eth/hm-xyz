@@ -2,9 +2,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { getRouteApi } from "@tanstack/react-router";
-import { Link2, Loader2 } from "lucide-react";
+import { ArrowUpRight, Link2, Loader2 } from "lucide-react";
 import { useHyvmindGraphs, useHyvmindNodes } from "../hooks/useHyvmind";
 import { usePostsByGraphNode } from "../hooks/useQueries";
+import { curationHref } from "../lib/curations";
 import { formatNodeType } from "../utils/formatting";
 import { BackButton } from "./BackButton";
 import { PostCard } from "./PostCard";
@@ -37,6 +38,16 @@ export function NodePage() {
             {graph?.name ?? "hyvmind.app"}
           </p>
         </div>
+        {graph && (
+          <a
+            href={curationHref(graph, nodeId)}
+            title="Open the full graph"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            full graph
+            <ArrowUpRight className="h-3 w-3" />
+          </a>
+        )}
       </div>
 
       <div className="border-b px-4 py-4">

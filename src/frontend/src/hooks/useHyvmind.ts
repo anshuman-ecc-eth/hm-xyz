@@ -2,6 +2,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   type GraphMeta,
   type ResolvedNode,
+  fetchGraphData,
   fetchGraphs,
   fetchNodes,
   resolveNodes,
@@ -35,6 +36,21 @@ export function useHyvmindNodes(graphId: string | null) {
       return loadGraphNodes(graph);
     },
     enabled: !!graphId && !!graphs.data,
+    staleTime: STALE_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+}
+
+/**
+ * The whole published graph (all node types plus cross-reference edges), for
+ * the curation page. Counts come from the payload, not from graph metadata.
+ */
+export function useHyvmindGraphData(graphId: string | null) {
+  return useQuery({
+    queryKey: ["hyvmind", "graphData", graphId],
+    queryFn: () => fetchGraphData(graphId as string),
+    enabled: !!graphId,
     staleTime: STALE_MS,
     refetchOnWindowFocus: false,
     retry: 1,

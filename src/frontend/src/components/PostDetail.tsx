@@ -38,6 +38,7 @@ import { PostCard } from "./PostCard";
 import { PostText } from "./PostText";
 import { PublicationGraph } from "./PublicationGraph";
 import { PublishToGraph } from "./PublishToGraph";
+import { SharePostButton } from "./SharePostButton";
 
 const routeApi = getRouteApi("/post/$id");
 
@@ -399,6 +400,11 @@ export function PostDetail() {
               />
             </button>
           )}
+          <SharePostButton
+            postId={"repost" in post.postType ? post.postType.repost : post.id}
+            size="lg"
+            className="p-2"
+          />
         </div>
         <Separator className="my-3" />
       </div>
